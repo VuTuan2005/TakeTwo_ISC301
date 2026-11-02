@@ -819,12 +819,14 @@ app.get('/api/admin/metrics', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 TakeTwo Marketplace V2.0 Server is LIVE!`);
-  console.log(`📍 Web Interface: http://localhost:${PORT}`);
-  console.log(`⚡ Native SQLite & In-app Escrow Wallet ready!`);
-  console.log(`=======================================================`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`🚀 TakeTwo Marketplace V2.0 Server is LIVE!`);
+    console.log(`📍 Web Interface: http://localhost:${PORT}`);
+    console.log(`⚡ Native SQLite & In-app Escrow Wallet ready!`);
+    console.log(`=======================================================`);
+  });
+}
 
 module.exports = app;

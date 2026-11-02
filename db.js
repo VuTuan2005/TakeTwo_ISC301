@@ -1,7 +1,11 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('node:path');
+const os = require('node:os');
 
-const dbPath = path.join(__dirname, 'taketwo.db');
+// In serverless environments (Vercel / Lambda), filesystem is read-only except /tmp
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const dbDir = isServerless ? os.tmpdir() : __dirname;
+const dbPath = path.join(dbDir, 'taketwo.db');
 const db = new DatabaseSync(dbPath);
 
 // Enable WAL mode & foreign keys
