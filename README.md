@@ -1,6 +1,10 @@
 # 🚀 TAKETWO MARKETPLACE (PHIÊN BẢN NÂNG CẤP V2.0)
 ### Sàn C2C Đồ Cũ Sinh Viên Hà Nội — Tích Hợp Ví Điện Tử Nội Bộ, Két Escrow 5 Ngày & Giao Diện Pancake Fintab
 
+- 🌐 **Vercel Production URL:** [https://take-two-isc-301.vercel.app](https://take-two-isc-301.vercel.app)
+- ⚙️ **Vercel Project Dashboard:** [https://vercel.com/vutuan2005/take-two-isc-301](https://vercel.com/vutuan2005/take-two-isc-301)
+- 🐙 **GitHub Repository:** [https://github.com/VuTuan2005/TakeTwo_ISC301](https://github.com/VuTuan2005/TakeTwo_ISC301) (Branch `main` tự động trigger CI/CD Deploy lên Vercel)
+
 Dự án đã được xây dựng hoàn chỉnh toàn bộ Full-stack (Database SQLite có sẵn dữ liệu mẫu, Backend REST APIs, và Giao diện Frontend phong cách Pancake Fintab).
 
 ---
