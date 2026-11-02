@@ -23,13 +23,44 @@
         </div>
       </div>
 
-      <!-- Workspace Selector -->
-      <div class="sidebar-workspace-select" onclick="switchNav('marketplace')">
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span>📍</span>
-          <span id="sidebarCampusLabel" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px;">Cụm Hòa Lạc (ĐH FPT)</span>
+      <!-- Workspace Selector with Dropdown -->
+      <div style="position: relative; margin: 0 12px 14px 12px;">
+        <div class="sidebar-workspace-select" style="margin: 0; cursor: pointer;" onclick="toggleSidebarCampusDropdown(event)" title="Bấm để chọn Cụm trường ĐH tại Hà Nội">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span>📍</span>
+            <span id="sidebarCampusLabel" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px;">Toàn Hà Nội</span>
+          </div>
+          <span style="font-size: 10px; color: var(--text-light);">▾</span>
         </div>
-        <span style="font-size: 10px; color: var(--text-light);">▾</span>
+
+        <!-- Campus Dropdown Menu -->
+        <div id="sidebarCampusDropdown" style="display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: white; border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15), 0 8px 10px -6px rgba(0,0,0,0.1); z-index: 1050; padding: 4px 0;">
+          <div style="padding: 6px 12px; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; border-bottom: 1px solid #F1F5F9;">Chọn cụm trường:</div>
+          <div class="campus-dd-item" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #F8FAFC; transition: background 0.15s;" onclick="selectCampusCluster('all')" onmouseover="this.style.background='#F1F5F9'" onmouseout="this.style.background='white'">
+            <div style="font-size: 12.5px; font-weight: 700; color: var(--primary);">📍 Toàn Hà Nội</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Tất cả các trường ĐH & KTX</div>
+          </div>
+          <div class="campus-dd-item" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #F8FAFC; transition: background 0.15s;" onclick="selectCampusCluster('Hòa Lạc')" onmouseover="this.style.background='#F1F5F9'" onmouseout="this.style.background='white'">
+            <div style="font-size: 12.5px; font-weight: 700; color: var(--text-title);">📍 Cụm Hòa Lạc</div>
+            <div style="font-size: 11px; color: var(--text-muted);">ĐH FPT, ĐHQG Hà Nội</div>
+          </div>
+          <div class="campus-dd-item" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #F8FAFC; transition: background 0.15s;" onclick="selectCampusCluster('Cầu Giấy - Xuân Thủy')" onmouseover="this.style.background='#F1F5F9'" onmouseout="this.style.background='white'">
+            <div style="font-size: 12.5px; font-weight: 700; color: var(--text-title);">📍 Cụm Cầu Giấy - Xuân Thủy</div>
+            <div style="font-size: 11px; color: var(--text-muted);">ĐH Sư Phạm, ĐH Ngoại Ngữ, Báo Chí</div>
+          </div>
+          <div class="campus-dd-item" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #F8FAFC; transition: background 0.15s;" onclick="selectCampusCluster('Bách - Kinh - Xây')" onmouseover="this.style.background='#F1F5F9'" onmouseout="this.style.background='white'">
+            <div style="font-size: 12.5px; font-weight: 700; color: var(--text-title);">📍 Cụm Bách - Kinh - Xây</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Bách Khoa, Kinh Tế QD, Xây Dựng</div>
+          </div>
+          <div class="campus-dd-item" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #F8FAFC; transition: background 0.15s;" onclick="selectCampusCluster('Đống Đa - Chùa Láng')" onmouseover="this.style.background='#F1F5F9'" onmouseout="this.style.background='white'">
+            <div style="font-size: 12.5px; font-weight: 700; color: var(--text-title);">📍 Cụm Đống Đa - Chùa Láng</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Ngoại Thương, Ngoại Giao, HV Ngân Hàng</div>
+          </div>
+          <div class="campus-dd-item" style="padding: 8px 12px; cursor: pointer; transition: background 0.15s;" onclick="selectCampusCluster('Hà Đông - Thanh Xuân')" onmouseover="this.style.background='#F1F5F9'" onmouseout="this.style.background='white'">
+            <div style="font-size: 12.5px; font-weight: 700; color: var(--text-title);">📍 Cụm Hà Đông - Thanh Xuân</div>
+            <div style="font-size: 11px; color: var(--text-muted);">PTIT Bưu Chính, ĐH Hà Nội, KHTN</div>
+          </div>
+        </div>
       </div>
 
       <!-- Navigation Menu -->
@@ -52,7 +83,7 @@
             </svg>
             <span class="nav-item-text">Sản phẩm & Đồ cũ</span>
           </div>
-          <span id="navProductCount" class="nav-badge">8 SP</span>
+          <span id="navProductCount" class="nav-badge">50 SP</span>
         </div>
 
         <div id="nav-orders" class="sidebar-nav-item" onclick="switchNav('orders')">
@@ -101,9 +132,9 @@
         </div>
       </nav>
 
-      <!-- Sidebar Footer (Account Switcher) -->
+      <!-- Sidebar Footer (Account Switcher & Login/Logout) -->
       <div class="sidebar-footer">
-        <div class="account-selector-card">
+        <div id="sidebarUserCard" class="account-selector-card" style="cursor: pointer;" onclick="const sel = document.getElementById('userSwitcher'); try { sel.showPicker(); } catch(e) { sel.focus(); }">
           <img id="sidebarUserAvatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80" class="account-avatar">
           <div class="account-info">
             <div id="sidebarUserName" class="account-name">Vũ Hán Tuấn</div>
@@ -113,9 +144,21 @@
             </div>
           </div>
         </div>
-        <select id="userSwitcher" class="account-switch-dropdown" onchange="onUserSwitch(this.value)">
-          <!-- Rendered via JS -->
-        </select>
+
+        <div id="sidebarUserSwitchRow" style="display: flex; gap: 6px; align-items: center; margin-top: 8px;">
+          <select id="userSwitcher" class="account-switch-dropdown" style="flex: 1; margin: 0;" onchange="onUserSwitch(this.value)">
+            <!-- Rendered via JS -->
+          </select>
+          <button id="btnSidebarLogout" class="btn-fintab btn-fintab-outline" style="padding: 6px 10px; font-size: 11px; border-color: #EF4444; color: #EF4444;" onclick="handleLogout()" title="Đăng xuất khỏi tài khoản">
+            🚪 Đăng xuất
+          </button>
+        </div>
+
+        <div id="sidebarGuestBox" style="display: none; text-align: center; padding: 6px 0;">
+          <button class="btn-fintab btn-fintab-primary" style="width: 100%; padding: 8px; font-size: 12.5px; font-weight: 700;" onclick="openLoginModal()">
+            🔑 Đăng Nhập Sinh Viên
+          </button>
+        </div>
       </div>
     </aside>
 
@@ -164,6 +207,11 @@
             </svg>
             Đăng Bán Nhanh
           </button>
+
+          <!-- Topbar Auth Button (Login / Logout) -->
+          <button id="btnTopbarAuth" class="btn-fintab btn-fintab-outline" style="padding: 7px 12px; font-size: 11.5px; font-weight: 700;" onclick="handleAuthClick()">
+            🚪 Đăng Xuất
+          </button>
         </div>
       </header>
 
@@ -179,8 +227,8 @@
             </div>
             <div class="page-actions-group">
               <select id="overviewCampusFilter" class="filter-select" onchange="onOverviewFilterChange()">
-                <option value="all">Tất cả Cụm trường Hà Nội</option>
-                <option value="Hòa Lạc" selected>📍 Cụm Hòa Lạc (ĐH FPT / ĐHQG)</option>
+                <option value="all" selected>Tất cả Cụm trường Hà Nội</option>
+                <option value="Hòa Lạc">📍 Cụm Hòa Lạc (ĐH FPT / ĐHQG)</option>
                 <option value="Cầu Giấy - Xuân Thủy">📍 Cụm Cầu Giấy - Xuân Thủy</option>
                 <option value="Bách - Kinh - Xây">📍 Cụm Bách - Kinh - Xây</option>
                 <option value="Đống Đa - Chùa Láng">📍 Cụm Đống Đa - Chùa Láng</option>
@@ -318,7 +366,7 @@
           <div class="fintab-page-header">
             <div class="page-title-group">
               <h1>🛒 Sàn Giao Dịch Đồ Cũ Sinh Viên Hà Nội</h1>
-              <p>8 sản phẩm sinh viên chân thực được phân bổ đều qua 4 danh mục và các cụm trường Đại học tại Hà Nội.</p>
+              <p>50 sản phẩm sinh viên chân thực được phân bổ đều qua 4 danh mục và các cụm trường Đại học tại Hà Nội.</p>
             </div>
             <div class="page-actions-group">
               <button class="btn-fintab btn-fintab-primary" onclick="openCreateListingModal()">+ Đăng Tin Mới</button>
@@ -337,8 +385,8 @@
               </div>
 
               <select id="marketCampusSelect" class="filter-select" onchange="onFilterChange()">
-                <option value="all">📍 Toàn Hà Nội</option>
-                <option value="Hòa Lạc" selected>📍 Cụm Hòa Lạc (ĐH FPT / ĐHQG)</option>
+                <option value="all" selected>📍 Toàn Hà Nội</option>
+                <option value="Hòa Lạc">📍 Cụm Hòa Lạc (ĐH FPT / ĐHQG)</option>
                 <option value="Cầu Giấy - Xuân Thủy">📍 Cụm Cầu Giấy - Xuân Thủy</option>
                 <option value="Bách - Kinh - Xây">📍 Cụm Bách - Kinh - Xây</option>
                 <option value="Đống Đa - Chùa Láng">📍 Cụm Đống Đa - Chùa Láng</option>
@@ -354,7 +402,7 @@
             </div>
 
             <div style="font-size: 12.5px; color: var(--text-muted); font-weight: 500;">
-              Hiển thị <span id="productResultCount" style="color: var(--primary); font-weight: 700;">8 món đồ</span>
+              Hiển thị <span id="productResultCount" style="color: var(--primary); font-weight: 700;">50 món đồ</span>
             </div>
           </div>
 
@@ -844,8 +892,22 @@
           <textarea id="newPostDefectNote" class="filter-select" style="width: 100%; padding: 8px; height: 60px;" placeholder="Ghi rõ khuyết điểm nếu có để nâng cao uy tín"></textarea>
         </div>
         <div style="margin-bottom: 12px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Link ảnh sản phẩm:</label>
-          <input type="text" id="newPostImageUrl" class="filter-select" style="width: 100%; padding: 8px;" placeholder="https://... (Để trống dùng ảnh mặc định)">
+          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">📷 Hình ảnh sản phẩm thật (*):</label>
+          <div id="imageUploadBox" style="border: 2px dashed #CBD5E1; border-radius: var(--radius-md); padding: 14px; text-align: center; background: #F8FAFC; cursor: pointer; transition: all 0.2s;" onclick="document.getElementById('newPostImageFile').click()">
+            <input type="file" id="newPostImageFile" accept="image/*" style="display: none;" onchange="handleImageUpload(event)">
+            <div id="uploadPrompt">
+              <div style="font-size: 26px; margin-bottom: 2px;">📸</div>
+              <div style="font-size: 12.5px; font-weight: 700; color: var(--primary);">Bấm để tải ảnh thật từ máy tính / điện thoại</div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Tự động tối ưu dung lượng • Xem trước ảnh thật</div>
+            </div>
+            <div id="imagePreviewWrapper" style="display: none;">
+              <img id="newPostImagePreview" src="" style="max-height: 140px; border-radius: 6px; object-fit: contain; box-shadow: var(--shadow-sm); margin: 0 auto; display: block;">
+              <div style="margin-top: 6px;">
+                <span class="btn-fintab btn-fintab-outline" style="padding: 2px 8px; font-size: 11px;">🔄 Bấm để chọn ảnh khác</span>
+              </div>
+            </div>
+          </div>
+          <input type="hidden" id="newPostImageUrl">
         </div>
       </div>
       <div class="modal-footer-bar">
@@ -938,6 +1000,164 @@
       <div class="modal-footer-bar">
         <button class="btn-fintab btn-fintab-outline" onclick="closeModal('modalVoucherReceipt')">Đóng</button>
         <button class="btn-fintab btn-fintab-primary" onclick="showToast('Đang kết nối máy in chứng từ TakeTwo...', 'success')">🖨️ In Phiếu Chứng Từ</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 8. AUTHENTIC AUTHENTICATION MODAL (LOGIN / REGISTER / GOOGLE SSO / OTP) -->
+  <div id="modalLogin" class="fintab-modal-overlay">
+    <div class="fintab-modal-dialog" style="max-width: 520px;">
+      <div class="modal-header-bar">
+        <h3 id="authModalTitle">🔑 Đăng Nhập & Xác Thực Sinh Viên</h3>
+        <button class="btn-close-modal" onclick="closeModal('modalLogin')">&times;</button>
+      </div>
+      <div class="modal-content-body" style="padding-top: 14px;">
+
+        <!-- 1. Continue with Google SSO (Top Priority Button) -->
+        <button type="button" class="btn-fintab" style="width: 100%; padding: 10px 14px; display: flex; align-items: center; justify-content: center; gap: 10px; background: #ffffff; border: 1.5px solid #CBD5E1; font-weight: 700; color: #1E293B; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); transition: all 0.2s;" onclick="promptGoogleSSO()">
+          <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+          <span style="font-size: 13.5px;">Tiếp tục với Google / Email Trường ĐH (@fpt, @vnu...)</span>
+        </button>
+
+        <div style="display: flex; align-items: center; margin: 14px 0 16px 0; gap: 10px;">
+          <div style="flex: 1; height: 1px; background: #E2E8F0;"></div>
+          <span style="font-size: 11.5px; color: var(--text-muted); font-weight: 600;">HOẶC ĐĂNG NHẬP QUA EMAIL</span>
+          <div style="flex: 1; height: 1px; background: #E2E8F0;"></div>
+        </div>
+
+        <!-- 2. Auth Subtabs (Login / Register / Quick Demo) -->
+        <div style="display: flex; background: #F1F5F9; border-radius: 8px; padding: 4px; margin-bottom: 16px;">
+          <button id="btnTabLogin" type="button" class="btn-fintab" style="flex: 1; border: none; background: white; font-weight: 700; color: var(--primary); padding: 7px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); font-size: 12.5px;" onclick="switchAuthTab('login')">
+            🔑 Đăng Nhập
+          </button>
+          <button id="btnTabRegister" type="button" class="btn-fintab" style="flex: 1; border: none; background: transparent; font-weight: 600; color: var(--text-muted); padding: 7px; border-radius: 6px; font-size: 12.5px;" onclick="switchAuthTab('register')">
+            📝 Đăng Ký (+100k)
+          </button>
+          <button id="btnTabDemo" type="button" class="btn-fintab" style="flex: 1; border: none; background: transparent; font-weight: 600; color: var(--text-muted); padding: 7px; border-radius: 6px; font-size: 12.5px;" onclick="switchAuthTab('demo')">
+            👥 Demo 4 Roles
+          </button>
+        </div>
+
+        <!-- TAB CONTENT 1: LOGIN -->
+        <div id="authContentLogin">
+          <div style="margin-bottom: 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label style="font-size: 12px; font-weight: 700; color: var(--text-title);">Email Sinh Viên (*):</label>
+              <div style="font-size: 11.5px; display: flex; gap: 10px;">
+                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                  <input type="radio" name="loginMethod" value="password" checked onchange="toggleLoginMethod('password')">
+                  <span>Mật khẩu</span>
+                </label>
+                <label style="cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                  <input type="radio" name="loginMethod" value="otp" onchange="toggleLoginMethod('otp')">
+                  <span>Mã OTP</span>
+                </label>
+              </div>
+            </div>
+            <input type="email" id="loginEmail" class="fintab-input" placeholder="Ví dụ: tuanvhhe194875@fpt.edu.vn" style="width: 100%; padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 6px;">
+          </div>
+
+          <!-- Password field -->
+          <div id="loginPassBox" style="margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 6px;">Mật Khẩu (*):</label>
+            <input type="password" id="loginPassword" class="fintab-input" placeholder="Mật khẩu của bạn (Mặc định demo: 123456)" style="width: 100%; padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 6px;" onkeypress="if(event.key==='Enter') submitAuthLogin()">
+          </div>
+
+          <!-- OTP field (hidden by default) -->
+          <div id="loginOtpBox" style="display: none; margin-bottom: 16px;">
+            <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 6px;">Mã OTP Xác Thực (6 số):</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="loginOtpCode" class="fintab-input" placeholder="Nhập 6 số OTP" maxlength="6" style="flex: 1; padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-weight: 700; font-family: monospace; letter-spacing: 2px;">
+              <button type="button" id="btnSendLoginOtp" class="btn-fintab btn-fintab-outline" style="padding: 9px 14px; font-weight: 700; font-size: 12px; white-space: nowrap;" onclick="sendAuthOtp('login')">
+                📲 Gửi Mã OTP
+              </button>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Mã OTP sẽ được gửi về email của bạn (Hiệu lực 5 phút).</div>
+          </div>
+
+          <button type="button" class="btn-fintab btn-fintab-primary" style="width: 100%; padding: 10px; font-size: 13.5px; font-weight: 700;" onclick="submitAuthLogin()">
+            🚀 Đăng Nhập Tài Khoản
+          </button>
+        </div>
+
+        <!-- TAB CONTENT 2: REGISTER -->
+        <div id="authContentRegister" style="display: none;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 4px;">Họ và Tên (*):</label>
+              <input type="text" id="regName" class="fintab-input" placeholder="Ví dụ: Hoàng Tuấn Anh" style="width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 6px;">
+            </div>
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 4px;">Mã Sinh Viên:</label>
+              <input type="text" id="regStudentCode" class="fintab-input" placeholder="Ví dụ: HE194875" style="width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 6px;">
+            </div>
+          </div>
+
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 4px;">Email Sinh Viên Trường (*):</label>
+            <input type="email" id="regEmail" class="fintab-input" placeholder="Ví dụ: tuananh@fpt.edu.vn" style="width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 6px;">
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 4px;">Vai Trò Đăng Ký (*):</label>
+              <select id="regRole" class="filter-select" style="width: 100%; margin: 0; padding: 8px 10px;">
+                <option value="BUYER" selected>👤 Sinh Viên Mua Đồ (BUYER)</option>
+                <option value="SELLER">🏪 Chủ Gian Hàng (SELLER)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 4px;">Cụm Trường ĐH (*):</label>
+              <select id="regCampus" class="filter-select" style="width: 100%; margin: 0; padding: 8px 10px;">
+                <option value="Hòa Lạc" selected>📍 Cụm Hòa Lạc (ĐH FPT / ĐHQG)</option>
+                <option value="Cầu Giấy - Xuân Thủy">📍 Cụm Cầu Giấy - Xuân Thủy</option>
+                <option value="Bách - Kinh - Xây">📍 Cụm Bách - Kinh - Xây</option>
+                <option value="Đống Đa - Chùa Láng">📍 Cụm Đống Đa - Chùa Láng</option>
+                <option value="Hà Đông - Thanh Xuân">📍 Cụm Hà Đông - Thanh Xuân</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 10px;">
+            <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 4px;">Tạo Mật Khẩu (*):</label>
+            <input type="password" id="regPassword" class="fintab-input" placeholder="Tối thiểu 6 ký tự" style="width: 100%; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 6px;">
+          </div>
+
+          <div style="margin-bottom: 14px; background: #F8FAFC; padding: 10px; border: 1.5px dashed #CBD5E1; border-radius: 6px;">
+            <label style="font-size: 12px; font-weight: 700; color: var(--text-title); display: block; margin-bottom: 4px;">Xác Thực OTP Email (*):</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="regOtpCode" class="fintab-input" placeholder="Nhập mã 6 số OTP" maxlength="6" style="flex: 1; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 6px; font-weight: 700; font-family: monospace; letter-spacing: 2px;">
+              <button type="button" id="btnSendRegOtp" class="btn-fintab btn-fintab-outline" style="padding: 8px 12px; font-weight: 700; font-size: 11.5px; white-space: nowrap;" onclick="sendAuthOtp('register')">
+                📲 Nhận Mã OTP
+              </button>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Mã OTP sẽ được gửi về email trường để chống tài khoản ảo.</div>
+          </div>
+
+          <button type="button" class="btn-fintab btn-fintab-primary" style="width: 100%; padding: 10px; font-size: 13.5px; font-weight: 700;" onclick="submitAuthRegister()">
+            🎁 Hoàn Tất Đăng Ký & Nhận +100.000đ Quà Tặng
+          </button>
+        </div>
+
+        <!-- TAB CONTENT 3: DEMO 4 ROLES SWITCHER -->
+        <div id="authContentDemo" style="display: none;">
+          <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            Bấm 1-click để đăng nhập vào bất kỳ vai trò nào bên dưới phục vụ kiểm thử hệ thống:
+          </p>
+          <div id="loginUserCardsList" style="display: flex; flex-direction: column; gap: 10px;">
+            <!-- Injected dynamically via JS -->
+          </div>
+        </div>
+
+        <div style="margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--border); text-align: center;">
+          <span style="font-size: 11px; color: var(--text-muted);">
+            🛡️ Bảo mật chuẩn ngân hàng & Két Escrow 5 Ngày bảo vệ người mua 100%
+          </span>
+        </div>
+      </div>
+      <div class="modal-footer-bar">
+        <button class="btn-fintab btn-fintab-outline" onclick="closeModal('modalLogin')">Đóng</button>
       </div>
     </div>
   </div>

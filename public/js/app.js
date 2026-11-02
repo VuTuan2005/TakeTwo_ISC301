@@ -62,12 +62,13 @@ async function initApp() {
 // -------------------------------------------------------------
 async function loadUsers() {
   try {
-    const res = await fetch('/api/users');
+    const res = await fetch('/api/users?_t=' + Date.now(), { cache: 'no-store' });
     allUsers = await res.json();
     const select = $id('userSwitcher');
     if (select) {
+      const savedId = localStorage.getItem('takeTwo_activeUserId') || '1';
       select.innerHTML = allUsers.map(u => `
-        <option value="${u.id}">
+        <option value="${u.id}" ${String(u.id) === String(savedId) ? 'selected' : ''}>
           ${u.role === 'ADMIN' ? '🛡️ ' + u.name : (u.role === 'SELLER' ? '🏪 ' + u.name : '👤 ' + u.name)} (${u.role})
         </option>
       `).join('');
@@ -79,18 +80,27 @@ async function loadUsers() {
 
 async function onUserSwitch(userId) {
   try {
-    const res = await fetch(`/api/me?user_id=${userId}`);
+    localStorage.setItem('takeTwo_activeUserId', String(userId));
+    const select = $id('userSwitcher');
+    if (select && select.value !== String(userId)) {
+      select.value = String(userId);
+    }
+
+    const res = await fetch(`/api/me?user_id=${userId}&_t=${Date.now()}`, {
+      headers: { 'x-user-id': String(userId) },
+      cache: 'no-store'
+    });
     const data = await res.json();
     currentUser = data.user;
     currentWallet = data.wallet || { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
     updateHeaderWalletDisplay();
     showToast(`Đã chuyển sang tài khoản: ${currentUser.name} (${currentUser.role})`, 'success');
 
-    // Refresh views
-    loadOverview();
-    loadProducts();
-    loadOrders();
-    loadTransactionsTable();
+    // Refresh all views with fresh data
+    await loadOverview();
+    await loadProducts();
+    await loadOrders();
+    await loadTransactionsTable();
   } catch (err) {
     showToast('Lỗi khi đổi tài khoản', 'error');
   }
@@ -99,8 +109,22 @@ async function onUserSwitch(userId) {
 async function loadMe() {
   try {
     const userSelect = $id('userSwitcher');
-    const activeId = (userSelect && userSelect.value) ? userSelect.value : 1;
-    const res = await fetch(`/api/me?user_id=${activeId}`);
+    const savedId = localStorage.getItem('takeTwo_activeUserId');
+    if (savedId === 'guest') {
+      currentUser = null;
+      currentWallet = { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
+      updateHeaderWalletDisplay();
+      return;
+    }
+    const activeId = savedId || (userSelect && userSelect.value) || 1;
+    if (userSelect && userSelect.value !== String(activeId)) {
+      userSelect.value = String(activeId);
+    }
+
+    const res = await fetch(`/api/me?user_id=${activeId}&_t=${Date.now()}`, {
+      headers: { 'x-user-id': String(activeId) },
+      cache: 'no-store'
+    });
     const data = await res.json();
     currentUser = data.user;
     currentWallet = data.wallet || { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
@@ -110,11 +134,385 @@ async function loadMe() {
   }
 }
 
+// -------------------------------------------------------------
+// CAMPUS CLUSTER SELECTOR DROPDOWN (SIDEBAR)
+// -------------------------------------------------------------
+function toggleSidebarCampusDropdown(e) {
+  if (e) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+  const dd = $id('sidebarCampusDropdown');
+  if (!dd) return;
+  const isShown = dd.style.display === 'block';
+  dd.style.display = isShown ? 'none' : 'block';
+}
+
+function selectCampusCluster(campus) {
+  const dd = $id('sidebarCampusDropdown');
+  if (dd) dd.style.display = 'none';
+
+  const labelMap = {
+    'all': 'Toàn Hà Nội',
+    'Hòa Lạc': 'Cụm Hòa Lạc',
+    'Cầu Giấy - Xuân Thủy': 'Cụm Cầu Giấy',
+    'Bách - Kinh - Xây': 'Cụm Bách - Kinh - Xây',
+    'Đống Đa - Chùa Láng': 'Cụm Đống Đa',
+    'Hà Đông - Thanh Xuân': 'Cụm Hà Đông'
+  };
+
+  const labelEl = $id('sidebarCampusLabel');
+  if (labelEl) {
+    labelEl.textContent = labelMap[campus] || campus;
+  }
+
+  const mFilter = $id('marketCampusSelect');
+  if (mFilter) mFilter.value = campus;
+
+  const oFilter = $id('overviewCampusFilter');
+  if (oFilter) oFilter.value = campus;
+
+  switchNav('marketplace');
+  loadProducts();
+  showToast(`Đã lọc danh mục theo: ${labelMap[campus] || campus}`, 'info');
+}
+
+// Close campus dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const dd = $id('sidebarCampusDropdown');
+  if (dd && dd.style.display === 'block') {
+    if (!e.target.closest('.sidebar-workspace-select') && !e.target.closest('#sidebarCampusDropdown')) {
+      dd.style.display = 'none';
+    }
+  }
+});
+
+// -------------------------------------------------------------
+// AUTHENTICATION & LOGIN / REGISTER / GOOGLE SSO / OTP MODAL
+// -------------------------------------------------------------
+function openLoginModal(initialTab = 'login') {
+  switchAuthTab(initialTab);
+  renderLoginCards();
+  openModal('modalLogin');
+}
+
+function switchAuthTab(tab) {
+  const isLogin = tab === 'login';
+  const isReg = tab === 'register';
+  const isDemo = tab === 'demo';
+
+  const tabLogin = $id('btnTabLogin');
+  const tabReg = $id('btnTabRegister');
+  const tabDemo = $id('btnTabDemo');
+
+  const contentLogin = $id('authContentLogin');
+  const contentReg = $id('authContentRegister');
+  const contentDemo = $id('authContentDemo');
+
+  if (tabLogin) {
+    tabLogin.style.background = isLogin ? 'white' : 'transparent';
+    tabLogin.style.color = isLogin ? 'var(--primary)' : 'var(--text-muted)';
+    tabLogin.style.fontWeight = isLogin ? '700' : '600';
+    tabLogin.style.boxShadow = isLogin ? '0 1px 2px rgba(0,0,0,0.06)' : 'none';
+  }
+  if (tabReg) {
+    tabReg.style.background = isReg ? 'white' : 'transparent';
+    tabReg.style.color = isReg ? 'var(--primary)' : 'var(--text-muted)';
+    tabReg.style.fontWeight = isReg ? '700' : '600';
+    tabReg.style.boxShadow = isReg ? '0 1px 2px rgba(0,0,0,0.06)' : 'none';
+  }
+  if (tabDemo) {
+    tabDemo.style.background = isDemo ? 'white' : 'transparent';
+    tabDemo.style.color = isDemo ? 'var(--primary)' : 'var(--text-muted)';
+    tabDemo.style.fontWeight = isDemo ? '700' : '600';
+    tabDemo.style.boxShadow = isDemo ? '0 1px 2px rgba(0,0,0,0.06)' : 'none';
+  }
+
+  if (contentLogin) contentLogin.style.display = isLogin ? 'block' : 'none';
+  if (contentReg) contentReg.style.display = isReg ? 'block' : 'none';
+  if (contentDemo) {
+    contentDemo.style.display = isDemo ? 'block' : 'none';
+    if (isDemo) renderLoginCards();
+  }
+}
+
+function toggleLoginMethod(method) {
+  const passBox = $id('loginPassBox');
+  const otpBox = $id('loginOtpBox');
+  if (method === 'otp') {
+    if (passBox) passBox.style.display = 'none';
+    if (otpBox) otpBox.style.display = 'block';
+  } else {
+    if (passBox) passBox.style.display = 'block';
+    if (otpBox) otpBox.style.display = 'none';
+  }
+}
+
+async function sendAuthOtp(type) {
+  const emailInput = type === 'login' ? $id('loginEmail') : $id('regEmail');
+  const email = emailInput ? emailInput.value.trim() : '';
+
+  if (!email || !email.includes('@')) {
+    showToast('Vui lòng nhập địa chỉ email hợp lệ trước khi gửi OTP!', 'error');
+    if (emailInput) emailInput.focus();
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, type })
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+      return;
+    }
+
+    showToast(data.message, 'success');
+
+    // Auto-fill OTP field for demo convenience
+    if (data.demo_otp) {
+      if (type === 'login') {
+        $setVal('loginOtpCode', data.demo_otp);
+      } else {
+        $setVal('regOtpCode', data.demo_otp);
+      }
+    }
+
+    // Disable button for 30s
+    const btn = type === 'login' ? $id('btnSendLoginOtp') : $id('btnSendRegOtp');
+    if (btn) {
+      let countdown = 30;
+      btn.disabled = true;
+      const originText = btn.textContent;
+      const timer = setInterval(() => {
+        countdown--;
+        btn.textContent = `Gửi lại (${countdown}s)`;
+        if (countdown <= 0) {
+          clearInterval(timer);
+          btn.disabled = false;
+          btn.textContent = originText;
+        }
+      }, 1000);
+    }
+  } catch (err) {
+    showToast('Lỗi khi gửi mã OTP', 'error');
+  }
+}
+
+async function submitAuthLogin() {
+  const email = $val('loginEmail', '').trim();
+  const methodRadios = document.getElementsByName('loginMethod');
+  let method = 'password';
+  for (const r of methodRadios) {
+    if (r.checked) method = r.value;
+  }
+
+  const password = $val('loginPassword', '');
+  const otp_code = $val('loginOtpCode', '');
+
+  if (!email) {
+    showToast('Vui lòng nhập địa chỉ email sinh viên!', 'error');
+    return;
+  }
+
+  if (method === 'password' && !password) {
+    showToast('Vui lòng nhập mật khẩu tài khoản!', 'error');
+    return;
+  }
+
+  if (method === 'otp' && !otp_code) {
+    showToast('Vui lòng nhập mã OTP 6 số đã gửi về email!', 'error');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, otp_code, login_type: method })
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+      return;
+    }
+
+    closeModal('modalLogin');
+    localStorage.setItem('takeTwo_activeUserId', String(data.user.id));
+    currentUser = data.user;
+    currentWallet = data.wallet;
+    updateHeaderWalletDisplay();
+    await loadUsers();
+    showToast(data.message, 'success');
+
+    await loadOverview();
+    await loadProducts();
+    await loadOrders();
+    await loadTransactionsTable();
+  } catch (err) {
+    showToast('Lỗi đăng nhập tài khoản', 'error');
+  }
+}
+
+async function submitAuthRegister() {
+  const name = $val('regName', '').trim();
+  const student_code = $val('regStudentCode', '').trim();
+  const email = $val('regEmail', '').trim();
+  const role = $val('regRole', 'BUYER');
+  const campus = $val('regCampus', 'Hòa Lạc');
+  const password = $val('regPassword', '');
+  const otp_code = $val('regOtpCode', '').trim();
+
+  if (!name || !email || !password) {
+    showToast('Vui lòng điền đầy đủ Họ tên, Email và Mật khẩu!', 'error');
+    return;
+  }
+
+  if (!otp_code) {
+    showToast('Vui lòng bấm "Nhận Mã OTP" và nhập mã xác thực email!', 'error');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, student_code, email, role, campus, password, otp_code })
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+      return;
+    }
+
+    closeModal('modalLogin');
+    localStorage.setItem('takeTwo_activeUserId', String(data.user.id));
+    currentUser = data.user;
+    currentWallet = data.wallet;
+    updateHeaderWalletDisplay();
+    await loadUsers();
+    showToast(data.message, 'success');
+
+    await loadOverview();
+    await loadProducts();
+    await loadOrders();
+    await loadTransactionsTable();
+  } catch (err) {
+    showToast('Lỗi khi đăng ký tài khoản', 'error');
+  }
+}
+
+async function promptGoogleSSO() {
+  const email = prompt('Nhập địa chỉ email trường ĐH hoặc Google Workspace của bạn:\n(Ví dụ: sinhvien.k20@fpt.edu.vn hoặc tuananh@vnu.edu.vn)', 'sinhvien.k20@fpt.edu.vn');
+  if (!email || !email.trim()) return;
+
+  const cleanEmail = email.trim();
+  const name = cleanEmail.split('@')[0].replace(/[._]/g, ' ').toUpperCase();
+
+  try {
+    const res = await fetch('/api/auth/google', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: cleanEmail,
+        name: name,
+        campus: 'Hòa Lạc',
+        role: 'BUYER'
+      })
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+      return;
+    }
+
+    closeModal('modalLogin');
+    localStorage.setItem('takeTwo_activeUserId', String(data.user.id));
+    currentUser = data.user;
+    currentWallet = data.wallet;
+    updateHeaderWalletDisplay();
+    await loadUsers();
+    showToast(data.message, 'success');
+
+    await loadOverview();
+    await loadProducts();
+    await loadOrders();
+    await loadTransactionsTable();
+  } catch (err) {
+    showToast('Lỗi đăng nhập Google SSO', 'error');
+  }
+}
+
+function renderLoginCards() {
+  const container = $id('loginUserCardsList');
+  if (!container) return;
+  if (!allUsers || allUsers.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding:16px; color:var(--text-muted);">Đang tải danh sách người dùng...</div>';
+    return;
+  }
+  container.innerHTML = allUsers.map(u => {
+    const isCurrent = currentUser && currentUser.id === u.id;
+    const roleBadge = u.role === 'ADMIN' 
+      ? '<span class="fintab-badge fintab-badge-danger" style="font-size:10px;">ADMIN BẢO VỆ</span>' 
+      : (u.role === 'SELLER' 
+        ? '<span class="fintab-badge fintab-badge-warning" style="font-size:10px;">CHỦ GIAN HÀNG</span>' 
+        : '<span class="fintab-badge fintab-badge-blue" style="font-size:10px;">BUYER SINH VIÊN</span>');
+    return `
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1.5px solid ${isCurrent ? 'var(--primary)' : '#E2E8F0'}; background: ${isCurrent ? 'rgba(79, 70, 229, 0.05)' : '#fff'}; border-radius: 8px; cursor: pointer;"
+           onclick="handleLogin(${u.id})">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <img src="${u.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'}" style="width: 38px; height: 38px; border-radius: 50%; object-fit: cover; border: 1.5px solid #CBD5E1;">
+          <div>
+            <div style="font-weight: 700; font-size: 13px; color: var(--text-title);">${u.name}</div>
+            <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+              ${roleBadge}
+              <span style="font-size: 11px; color: var(--text-muted); font-family: monospace;">${u.student_code || 'SINH VIÊN'}</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          ${isCurrent 
+            ? '<span class="fintab-badge fintab-badge-success" style="font-size:11px;">✓ Đang dùng</span>' 
+            : `<button class="btn-fintab btn-fintab-primary" style="padding: 4px 10px; font-size: 11.5px;" onclick="event.stopPropagation(); handleLogin(${u.id})">Đăng Nhập</button>`}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function handleLogin(userId) {
+  closeModal('modalLogin');
+  await onUserSwitch(userId);
+  showToast(`Đăng nhập thành công! Chào mừng ${currentUser ? currentUser.name : ''}`, 'success');
+}
+
+function handleLogout() {
+  localStorage.setItem('takeTwo_activeUserId', 'guest');
+  currentUser = null;
+  currentWallet = { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
+  updateHeaderWalletDisplay();
+  showToast('Đã đăng xuất khỏi tài khoản TakeTwo', 'info');
+  loadOverview();
+  loadProducts();
+  loadOrders();
+  loadTransactionsTable();
+}
+
+function handleAuthClick() {
+  if (currentUser) {
+    handleLogout();
+  } else {
+    openLoginModal('login');
+  }
+}
+
 function updateHeaderWalletDisplay() {
-  if (!currentWallet) return;
-  const availText = formatVND(currentWallet.available_balance);
-  const escrowText = formatVND(currentWallet.escrow_balance);
-  const creditsText = `${currentWallet.boost_credits || 0} lượt`;
+  const availText = currentWallet ? formatVND(currentWallet.available_balance) : '0 đ';
+  const escrowText = currentWallet ? formatVND(currentWallet.escrow_balance) : '0 đ';
+  const creditsText = `${(currentWallet && currentWallet.boost_credits) || 0} lượt`;
 
   $text('topbarWalletAvailable', availText);
   $text('topbarWalletEscrow', escrowText);
@@ -141,7 +539,17 @@ function updateHeaderWalletDisplay() {
   $text('withdrawAvailableDisplay', availText);
   $text('checkoutCurrentBalance', `Khả dụng: ${availText}`);
 
+  const userCard = $id('sidebarUserCard');
+  const userSwitchRow = $id('sidebarUserSwitchRow');
+  const guestBox = $id('sidebarGuestBox');
+  const btnAuth = $id('btnTopbarAuth');
+
   if (currentUser) {
+    if (userCard) userCard.style.display = 'flex';
+    if (userSwitchRow) userSwitchRow.style.display = 'flex';
+    if (guestBox) guestBox.style.display = 'none';
+    if (btnAuth) btnAuth.innerHTML = '🚪 Đăng Xuất';
+
     $text('sidebarUserName', currentUser.name);
     $text('sidebarStudentCode', currentUser.student_code || 'TAKETWO');
     $src('sidebarUserAvatar', currentUser.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80');
@@ -154,6 +562,11 @@ function updateHeaderWalletDisplay() {
     }
 
     $text('barEcoVal', `${(currentUser.co2_saved_kg || 18.5).toFixed(1)} kg CO2`);
+  } else {
+    if (userCard) userCard.style.display = 'none';
+    if (userSwitchRow) userSwitchRow.style.display = 'none';
+    if (guestBox) guestBox.style.display = 'block';
+    if (btnAuth) btnAuth.innerHTML = '🔑 Đăng Nhập';
   }
 }
 
@@ -235,7 +648,7 @@ function executeGlobalSearch() {
 // -------------------------------------------------------------
 async function loadOverview() {
   try {
-    const resMetrics = await fetch('/api/admin/metrics');
+    const resMetrics = await fetch('/api/admin/metrics?_t=' + Date.now(), { cache: 'no-store' });
     const metrics = await resMetrics.json();
 
     $text('kpiOverviewGMV', formatVND(metrics.gmv_completed || 1280000));
@@ -244,49 +657,98 @@ async function loadOverview() {
     $text('kpiOverviewBoostCredits', `${currentWallet.boost_credits || 0} lượt`);
 
     // Orders summary
-    const resOrders = await fetch('/api/orders', {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 }
+    const resOrders = await fetch('/api/orders?_t=' + Date.now(), {
+      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+      cache: 'no-store'
     });
     const orders = await resOrders.json();
     const activeOrders = orders.filter(o => o.status === 'DELIVERING' || o.status === 'REQUESTED');
     $text('kpiOverviewOrdersCount', `${orders.length} đơn (${activeOrders.length} đang xử lý)`);
 
-    // Overview SLA Order Box
-    const activeOrder = orders.find(o => o.status === 'DELIVERING') || orders.find(o => o.status === 'REQUESTED') || orders[0];
+    // Overview SLA Order Box: prioritize delivering, then requested, then disputed, then completed
+    const deliveringOrder = orders.find(o => o.status === 'DELIVERING');
+    const requestedOrder = orders.find(o => o.status === 'REQUESTED');
+    const disputedOrder = orders.find(o => o.status === 'DISPUTED');
+    const activeOrder = deliveringOrder || requestedOrder || disputedOrder || orders[0];
+
     const slaBox = $id('overviewSlaBox');
     if (slaBox) {
       if (activeOrder) {
+        let statusBadge = '';
+        let slaClockHtml = '';
+        const isCompleted = activeOrder.status === 'COMPLETED' || activeOrder.status === 'COMPLETED_AUTO';
+
+        if (activeOrder.status === 'DELIVERING') {
+          statusBadge = '<span class="fintab-badge fintab-badge-blue"><span class="dot"></span> 🚚 Đang vận chuyển</span>';
+          slaClockHtml = `
+            <div style="text-align: center; background: #FFFBEB; border: 1px dashed #FCD34D; border-radius: var(--radius-md); padding: 12px;">
+              <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #B45309;">ĐỒNG HỒ TỰ ĐỘNG GIẢI NGÂN (SLA 5 NGÀY / 120H)</div>
+              <div class="live-countdown" data-deadline="${activeOrder.auto_confirm_deadline || ''}" style="font-size: 16px; font-weight: 800; color: #D97706; margin: 4px 0;">Đang tính...</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Hết 5 ngày không khiếu nại -> Tiền tự động về Người bán</div>
+
+              <div style="margin-top: 10px;">
+                <button class="btn-fintab btn-fintab-amber" style="width: 100%; padding: 8px; font-weight: 700; font-size: 12px;" onclick="simulate5Days(${activeOrder.id})" title="Mô phỏng 5 ngày trôi qua không có khiếu nại -> Tiền giải ngân cho Người bán">
+                  ⚡ Demo Giảng Viên: Qua 5 Ngày (Auto-Confirm)
+                </button>
+              </div>
+            </div>
+          `;
+        } else if (activeOrder.status === 'REQUESTED') {
+          statusBadge = '<span class="fintab-badge fintab-badge-warning"><span class="dot"></span> Chờ gửi hàng</span>';
+          slaClockHtml = `
+            <div style="text-align: center; background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: var(--radius-md); padding: 12px;">
+              <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted);">CHƯA KÍCH HOẠT ĐỒNG HỒ 5 NGÀY</div>
+              <div style="font-size: 14px; font-weight: 700; color: var(--text-title); margin: 4px 0;">📦 Đang chờ Người bán gửi bưu cục</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Khi người bán bấm gửi bưu cục, đồng hồ 120h sẽ bắt đầu chạy</div>
+              <div style="margin-top: 10px;">
+                <button class="btn-fintab btn-fintab-success" style="width: 100%; padding: 8px; font-weight: 700; font-size: 12px;" onclick="quickShipOrder(${activeOrder.id})">
+                  🚚 Bấm Gửi Bưu Cục Ngay (Kích Hoạt SLA 5 Ngày)
+                </button>
+              </div>
+            </div>
+          `;
+        } else if (isCompleted) {
+          statusBadge = '<span class="fintab-badge fintab-badge-success"><span class="dot"></span> ✅ Đã hoàn tất</span>';
+          slaClockHtml = `
+            <div style="text-align: center; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: var(--radius-md); padding: 12px;">
+              <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #047857;">✓ GIAO DỊCH ĐÃ HOÀN TẤT & ĐÃ GIẢI NGÂN</div>
+              <div style="font-size: 15px; font-weight: 800; color: #059669; margin: 4px 0;">🎉 Két Escrow Đã Giải Phóng</div>
+              <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+                ${activeOrder.status === 'COMPLETED_AUTO' ? 'Đã tự động giải ngân sau 120h an toàn 100%.' : 'Người mua đã nhận đồ và xác nhận hài lòng.'} Tiền đã về ví Người bán.
+              </div>
+              <div style="margin-top: 10px;">
+                <button class="btn-fintab btn-fintab-outline" style="width: 100%; padding: 8px; font-size: 12px;" onclick="switchNav('transactions')">
+                  📜 Xem Phiếu Thu Giải Ngân Trong Sổ Quỹ ↗
+                </button>
+              </div>
+            </div>
+          `;
+        } else if (activeOrder.status === 'DISPUTED') {
+          statusBadge = '<span class="fintab-badge fintab-badge-danger"><span class="dot"></span> ⚠️ Tranh chấp</span>';
+          slaClockHtml = `
+            <div style="text-align: center; background: #FEF2F2; border: 1px solid #FECACA; border-radius: var(--radius-md); padding: 12px;">
+              <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #B91C1C;">⚠️ ĐỒNG HỒ ĐÃ ĐÓNG BĂNG DO TRANH CHẤP</div>
+              <div style="font-size: 14px; font-weight: 800; color: #DC2626; margin: 4px 0;">🔒 Két Escrow Đang Tạm Khóa</div>
+              <div style="font-size: 11px; color: var(--text-muted);">Ban Trọng tài đang đối soát giải quyết. Tiền bảo vệ an toàn 100%.</div>
+              <div style="margin-top: 10px;">
+                <button class="btn-fintab btn-fintab-primary" style="width: 100%; padding: 8px; font-size: 12px;" onclick="switchNav('disputes')">
+                  ⚖️ Mở Ban Trọng Tài Tranh Chấp ↗
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
         slaBox.innerHTML = `
           <div style="background: #F8FAFC; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
               <span style="font-weight: 700; color: var(--primary); font-size: 13px;">${activeOrder.order_code}</span>
-              <span class="fintab-badge fintab-badge-warning"><span class="dot"></span> ${activeOrder.status}</span>
+              ${statusBadge}
             </div>
             <div style="font-size: 13px; font-weight: 600; color: var(--text-title); line-height: 1.3; margin-bottom: 4px;">${activeOrder.product_title}</div>
-            <div style="font-size: 12px; color: var(--text-muted);">Giá trị: <strong>${formatVND(activeOrder.total_paid)}</strong> • Két Escrow khóa</div>
+            <div style="font-size: 12px; color: var(--text-muted);">Giá trị: <strong>${formatVND(activeOrder.total_paid)}</strong> • ${isCompleted ? 'Két Escrow đã giải phóng ✓' : 'Két Escrow khóa 🔒'}</div>
           </div>
-
-          <div style="text-align: center; background: #FFFBEB; border: 1px dashed #FCD34D; border-radius: var(--radius-md); padding: 12px;">
-            <div style="font-size: 11px; text-transform: uppercase; font-weight: 700; color: #B45309;">ĐỒNG HỒ TỰ ĐỘNG GIẢI NGÂN (SLA 5 NGÀY / 120H)</div>
-            <div class="live-countdown" data-deadline="${activeOrder.auto_confirm_deadline || ''}" style="font-size: 16px; font-weight: 800; color: #D97706; margin: 4px 0;">Đang tính...</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Hết 5 ngày không khiếu nại -> Tiền tự động về Người bán</div>
-
-            <div style="margin-top: 10px;">
-              ${activeOrder.status === 'DELIVERING' ? `
-                <button class="btn-fintab btn-fintab-amber" style="width: 100%; padding: 8px; font-weight: 700; font-size: 12px;" onclick="simulate5Days(${activeOrder.id})" title="Mô phỏng 5 ngày trôi qua không có khiếu nại -> Tiền giải ngân cho Người bán">
-                  ⚡ Demo Giảng Viên: Qua 5 Ngày (Auto-Confirm)
-                </button>
-              ` : (activeOrder.status === 'REQUESTED' ? `
-                <button class="btn-fintab btn-fintab-success" style="width: 100%; padding: 8px; font-weight: 700; font-size: 12px;" onclick="quickShipOrder(${activeOrder.id})">
-                  🚚 Bấm Gửi Bưu Cục Ngay (Kích Hoạt SLA 5 Ngày)
-                </button>
-              ` : `
-                <button class="btn-fintab btn-fintab-outline" style="width: 100%; padding: 8px; font-size: 12px;" onclick="switchNav('orders')">
-                  Xem Danh Sách Đơn Hàng ↗
-                </button>
-              `)}
-            </div>
-          </div>
+          ${slaClockHtml}
         `;
       } else {
         slaBox.innerHTML = `<div style="text-align:center; padding:20px; color:var(--text-muted);">Không có đơn hàng nào đang chạy SLA</div>`;
@@ -294,7 +756,10 @@ async function loadOverview() {
     }
 
     // Recent 5 Ledger Items
-    const resTx = await fetch('/api/transactions?tab=all&view_all=true');
+    const resTx = await fetch('/api/transactions?tab=all&view_all=true&_t=' + Date.now(), {
+      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+      cache: 'no-store'
+    });
     const txData = await resTx.json();
     const tbody = $id('overviewLedgerTbody');
     if (tbody) {
@@ -341,11 +806,12 @@ async function loadProducts(overrideSearch) {
   const condition = $val('conditionFilter', 'all');
   const search = overrideSearch || $val('globalSearchInput', '');
 
-  const url = `/api/products?campus=${encodeURIComponent(campus)}&category=${encodeURIComponent(currentCategory)}&condition=${encodeURIComponent(condition)}&search=${encodeURIComponent(search)}`;
+  const url = `/api/products?campus=${encodeURIComponent(campus)}&category=${encodeURIComponent(currentCategory)}&condition=${encodeURIComponent(condition)}&search=${encodeURIComponent(search)}&_t=${Date.now()}`;
   
   try {
     const res = await fetch(url, {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 }
+      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+      cache: 'no-store'
     });
     const products = await res.json();
     renderProducts(products);
@@ -433,11 +899,19 @@ function renderProducts(products) {
               <span style="font-size: 10.5px; color: #F59E0B; font-weight: 700;">★ ${p.seller_rating || 5.0}</span>
             </div>
 
-            <div style="display: flex; gap: 6px; align-items: center;">
-              <button class="btn-fintab btn-fintab-amber" style="padding: 4px 8px; font-size: 11.5px;" onclick="quickBumpProduct(${p.id})" title="Đẩy bài lên đầu danh mục (Trừ 1 lượt VIP hoặc 15.000đ)">
-                🚀 Đẩy Top
-              </button>
-              ${isAvailable ? `
+            <div style="display: flex; gap: 4px; align-items: center;">
+              ${(isOwner || (currentUser && currentUser.role === 'ADMIN')) ? `
+                <button class="btn-fintab btn-fintab-amber" style="padding: 4px 7px; font-size: 11px;" onclick="quickBumpProduct(${p.id})" title="Đẩy bài lên đầu danh mục (Trừ 1 lượt VIP hoặc 15.000đ)">
+                  🚀 Đẩy Top
+                </button>
+                <button class="btn-fintab btn-fintab-danger" style="padding: 4px 6px; font-size: 11px;" onclick="deleteProduct(${p.id})" title="Gỡ bài đăng khỏi sàn TakeTwo">
+                  🗑️
+                </button>
+              ` : ''}
+
+              ${isOwner ? `
+                <span style="font-size:10.5px; font-weight:700; color:var(--primary); padding:3px 6px; background:#EEF2FF; border-radius:4px;">Đồ của bạn</span>
+              ` : (isAvailable ? `
                 <button class="btn-fintab btn-fintab-primary" style="padding: 4px 9px; font-size: 11.5px;" onclick="openCheckoutModal(${p.id})" title="Đặt mua món đồ qua Ví Escrow 5 Ngày">
                   ⚡ Mua Ngay
                 </button>
@@ -445,13 +919,36 @@ function renderProducts(products) {
                 <button class="btn-fintab btn-fintab-outline" style="padding: 4px 8px; font-size: 11px; cursor:not-allowed; opacity:0.6;" disabled>
                   Đã Giữ
                 </button>
-              `}
+              `)}
             </div>
           </div>
         </div>
       </div>
     `;
   }).join('');
+}
+
+// Delete product listing (Admin or Seller)
+async function deleteProduct(productId) {
+  if (!confirm('Bạn có chắc chắn muốn gỡ bài đăng này khỏi sàn TakeTwo không?')) return;
+  try {
+    const res = await fetch(`/api/products/${productId}/delete`, {
+      method: 'POST',
+      headers: {
+        'x-user-id': currentUser ? currentUser.id : 1
+      }
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast(data.error, 'error');
+      return;
+    }
+    showToast(data.message, 'success');
+    await loadProducts();
+    await loadOverview();
+  } catch (err) {
+    showToast('Lỗi khi gỡ bài đăng', 'error');
+  }
 }
 
 // 1-Click Bump Product to Top 1
@@ -493,13 +990,24 @@ function setTransactionTab(tab, btn) {
 async function loadTransactionsTable() {
   const search = $val('transactionSearchInput', '');
   const chkEl = $id('chkViewAllLedger');
-  const viewAll = chkEl ? chkEl.checked : false;
+  let viewAll = false;
+  if (chkEl) {
+    if (currentUser && currentUser.role === 'ADMIN') {
+      chkEl.parentElement.style.display = 'flex';
+      viewAll = chkEl.checked;
+    } else {
+      chkEl.parentElement.style.display = 'none';
+      chkEl.checked = false;
+      viewAll = false;
+    }
+  }
 
-  const url = `/api/transactions?tab=${currentTransactionTab}&search=${encodeURIComponent(search)}&view_all=${viewAll}`;
+  const url = `/api/transactions?tab=${currentTransactionTab}&search=${encodeURIComponent(search)}&view_all=${viewAll}&_t=${Date.now()}`;
   
   try {
     const res = await fetch(url, {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 }
+      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+      cache: 'no-store'
     });
     const data = await res.json();
     currentTransactionsList = data.items || [];
@@ -595,8 +1103,9 @@ function openVoucherReceiptModal(index) {
 // -------------------------------------------------------------
 async function loadOrders() {
   try {
-    const res = await fetch('/api/orders', {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 }
+    const res = await fetch('/api/orders?_t=' + Date.now(), {
+      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+      cache: 'no-store'
     });
     const orders = await res.json();
     renderOrders(orders);
@@ -637,19 +1146,44 @@ function renderOrders(orders) {
     }
 
     let actionButtons = '';
+    const isSeller = currentUser && (currentUser.id === o.seller_id);
+    const isBuyer = currentUser && (currentUser.id === o.buyer_id);
+    const isAdmin = currentUser && (currentUser.role === 'ADMIN');
+
     if (o.status === 'REQUESTED') {
-      actionButtons += `
-        <button class="btn-fintab btn-fintab-primary" style="margin-right:4px; padding:4px 8px; font-size:11.5px;" onclick="sellerAcceptOrder(${o.id})">Duyệt</button>
-        <button class="btn-fintab btn-fintab-success" style="padding:4px 8px; font-size:11.5px;" onclick="quickShipOrder(${o.id})" title="Gửi ship ngay để kích hoạt đồng hồ 5 ngày">Gửi Ship</button>
-      `;
+      if (isSeller || isAdmin) {
+        actionButtons += `
+          <button class="btn-fintab btn-fintab-primary" style="margin-right:4px; padding:4px 8px; font-size:11.5px;" onclick="sellerAcceptOrder(${o.id})" title="Người bán duyệt đơn hàng">Duyệt</button>
+          <button class="btn-fintab btn-fintab-success" style="padding:4px 8px; font-size:11.5px;" onclick="quickShipOrder(${o.id})" title="Gửi ship ngay để kích hoạt đồng hồ 5 ngày">Gửi Ship</button>
+        `;
+      } else if (isBuyer) {
+        actionButtons += `<span class="fintab-badge fintab-badge-warning" style="font-size:11px;">⏳ Chờ người bán duyệt</span>`;
+      } else {
+        actionButtons += `<span style="color:#94A3B8; font-size:12px;">Chờ duyệt</span>`;
+      }
     } else if (o.status === 'ACCEPTED') {
-      actionButtons += `<button class="btn-fintab btn-fintab-success" style="padding:4px 8px; font-size:11.5px;" onclick="sellerShipOrder(${o.id})">Gửi Bưu Cục</button>`;
+      if (isSeller || isAdmin) {
+        actionButtons += `<button class="btn-fintab btn-fintab-success" style="padding:4px 8px; font-size:11.5px;" onclick="sellerShipOrder(${o.id})">Gửi Bưu Cục</button>`;
+      } else if (isBuyer) {
+        actionButtons += `<span class="fintab-badge fintab-badge-blue" style="font-size:11px;">📦 Người bán đang đóng gói</span>`;
+      } else {
+        actionButtons += `<span style="color:#94A3B8; font-size:12px;">Chờ gửi</span>`;
+      }
     } else if (o.status === 'DELIVERING') {
-      actionButtons += `
-        <button class="btn-fintab btn-fintab-success" style="margin-right:4px; padding:4px 8px; font-size:11.5px;" onclick="buyerConfirmOrder(${o.id})" title="Người mua xác nhận đã nhận đồ & giải phóng tiền Escrow">✅ Đã Nhận</button>
-        <button class="btn-fintab btn-fintab-amber" style="margin-right:4px; padding:4px 8px; font-size:11.5px;" onclick="simulate5Days(${o.id})" title="⚡ Giả lập trôi qua 5 ngày không khiếu nại -> Tự động giải ngân cho người bán">⚡ Qua 5 Ngày</button>
-        <button class="btn-fintab btn-fintab-danger" style="padding:4px 8px; font-size:11.5px;" onclick="openDisputeModal(${o.id})" title="Khiếu nại đóng băng két Escrow">⚠️ Khiếu Nại</button>
-      `;
+      if (isBuyer || isAdmin) {
+        actionButtons += `
+          <button class="btn-fintab btn-fintab-success" style="margin-right:4px; padding:4px 8px; font-size:11.5px;" onclick="buyerConfirmOrder(${o.id})" title="Người mua xác nhận đã nhận đồ & giải phóng tiền Escrow">✅ Đã Nhận</button>
+          <button class="btn-fintab btn-fintab-amber" style="margin-right:4px; padding:4px 8px; font-size:11.5px;" onclick="simulate5Days(${o.id})" title="⚡ Giả lập trôi qua 5 ngày không khiếu nại -> Tự động giải ngân cho người bán">⚡ Qua 5 Ngày</button>
+          <button class="btn-fintab btn-fintab-danger" style="padding:4px 8px; font-size:11.5px;" onclick="openDisputeModal(${o.id})" title="Khiếu nại đóng băng két Escrow">⚠️ Khiếu Nại</button>
+        `;
+      } else if (isSeller) {
+        actionButtons += `
+          <span class="fintab-badge fintab-badge-blue" style="font-size:11px; margin-right:4px;">🚚 Chờ buyer nhận</span>
+          <button class="btn-fintab btn-fintab-amber" style="padding:4px 8px; font-size:11.5px;" onclick="simulate5Days(${o.id})" title="⚡ Giả lập trôi qua 5 ngày không khiếu nại -> Tự động giải ngân cho người bán">⚡ Qua 5 Ngày (Demo)</button>
+        `;
+      } else {
+        actionButtons += `<span style="color:#94A3B8; font-size:12px;">Đang giao</span>`;
+      }
     } else if (o.status === 'DISPUTED') {
       actionButtons += `<button class="btn-fintab btn-fintab-primary" style="padding:4px 8px; font-size:11.5px;" onclick="switchNav('disputes')">⚖️ Trọng Tài</button>`;
     } else if (o.status === 'COMPLETED' || o.status === 'COMPLETED_AUTO') {
@@ -849,6 +1383,11 @@ async function submitDispute() {
 // CHECKOUT & ESCROW ORDER MODAL
 // -------------------------------------------------------------
 async function openCheckoutModal(productId) {
+  if (!currentUser) {
+    showToast('Vui lòng đăng nhập tài khoản sinh viên để đặt mua đồ!', 'info');
+    openLoginModal();
+    return;
+  }
   try {
     const res = await fetch(`/api/products/${productId}`);
     checkoutProduct = await res.json();
@@ -1085,6 +1624,11 @@ function renderPackagesTab() {
 
 // Mua gói đẩy bài trực tiếp bằng Ví TakeTwo
 async function buyBumpPackage(packageId) {
+  if (!currentUser) {
+    showToast('Vui lòng đăng nhập để mua gói đẩy bài!', 'info');
+    openLoginModal('login');
+    return;
+  }
   try {
     const res = await fetch('/api/bump-packages/buy', {
       method: 'POST',
@@ -1173,9 +1717,61 @@ async function execute1ClickBump(packageId) {
 }
 
 // -------------------------------------------------------------
-// POST NEW LISTING
+// POST NEW LISTING & REAL IMAGE UPLOAD
 // -------------------------------------------------------------
-function openCreateListingModal() {
+function handleImageUpload(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const dataUrl = evt.target.result;
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const maxDim = 800;
+      let width = img.width;
+      let height = img.height;
+      if (width > height && width > maxDim) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else if (height > maxDim) {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const optimizedUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+      $setVal('newPostImageUrl', optimizedUrl);
+      const previewImg = $id('newPostImagePreview');
+      const previewWrapper = $id('imagePreviewWrapper');
+      const uploadPrompt = $id('uploadPrompt');
+      if (previewImg) previewImg.src = optimizedUrl;
+      if (previewWrapper) previewWrapper.style.display = 'block';
+      if (uploadPrompt) uploadPrompt.style.display = 'none';
+      showToast('Đã tải và xử lý ảnh thật thành công!', 'success');
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function openCreateListingModal() {
+  if (!currentUser) {
+    showToast('Vui lòng đăng nhập tài khoản sinh viên để đăng bán đồ!', 'info');
+    openLoginModal('login');
+    return;
+  }
+  $setVal('newPostImageUrl', '');
+  const fileInput = $id('newPostImageFile');
+  if (fileInput) fileInput.value = '';
+  const previewWrapper = $id('imagePreviewWrapper');
+  if (previewWrapper) previewWrapper.style.display = 'none';
+  const uploadPrompt = $id('uploadPrompt');
+  if (uploadPrompt) uploadPrompt.style.display = 'block';
   openModal('modalCreateListing');
 }
 
@@ -1195,6 +1791,14 @@ async function submitCreateListing() {
     return;
   }
 
+  const defaultCategoryImages = {
+    books: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80',
+    living: 'https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?auto=format&fit=crop&w=600&q=80',
+    electronics: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?auto=format&fit=crop&w=600&q=80',
+    fashion: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80'
+  };
+  const finalImage = image_url || defaultCategoryImages[category_id] || defaultCategoryImages.books;
+
   try {
     const res = await fetch('/api/products', {
       method: 'POST',
@@ -1204,7 +1808,7 @@ async function submitCreateListing() {
       },
       body: JSON.stringify({
         title, category_id, condition_level, price, original_price,
-        campus_cluster, meetup_location, defect_note, image_url
+        campus_cluster, meetup_location, defect_note, image_url: finalImage
       })
     });
     const data = await res.json();
@@ -1215,8 +1819,18 @@ async function submitCreateListing() {
 
     closeModal('modalCreateListing');
     showToast('Đăng tin thành công lên TakeTwo!', 'success');
-    loadProducts();
-    loadOverview();
+
+    // Reset filters so the newly posted product is immediately visible
+    currentCategory = 'all';
+    document.querySelectorAll('.btn-pill-group .btn-pill-item').forEach(el => el.classList.remove('active'));
+    const firstPill = document.querySelector('.btn-pill-group .btn-pill-item');
+    if (firstPill) firstPill.classList.add('active');
+    $setVal('marketCampusSelect', 'all');
+    $setVal('globalSearchInput', '');
+
+    switchNav('marketplace');
+    await loadProducts();
+    await loadOverview();
   } catch (err) {
     showToast('Lỗi khi đăng tin', 'error');
   }
@@ -1227,14 +1841,14 @@ async function submitCreateListing() {
 // -------------------------------------------------------------
 async function loadDisputesView() {
   try {
-    const resMetrics = await fetch('/api/admin/metrics');
+    const resMetrics = await fetch('/api/admin/metrics?_t=' + Date.now(), { cache: 'no-store' });
     const data = await resMetrics.json();
     $text('metricNorthStar', data.north_star_verified_transactions);
     $text('metricGMV', formatVND(data.gmv_completed));
     $text('metricActiveListings', data.active_real_listings);
     $text('metricRepeatRate', (data.repeat_seller_rate || 100) + '%');
 
-    const resOrders = await fetch('/api/orders');
+    const resOrders = await fetch('/api/orders?_t=' + Date.now(), { cache: 'no-store' });
     const orders = await resOrders.json();
     const disputes = orders.filter(o => o.status === 'DISPUTED');
     renderAdminDisputes(disputes);
@@ -1252,6 +1866,8 @@ function renderAdminDisputes(disputes) {
     return;
   }
 
+  const isAdmin = currentUser && (currentUser.role === 'ADMIN');
+
   tbody.innerHTML = disputes.map(d => `
     <tr>
       <td style="font-weight:700; color:var(--primary);">${d.order_code}</td>
@@ -1260,12 +1876,16 @@ function renderAdminDisputes(disputes) {
       <td style="color:#DC2626; font-size:12px;">${d.dispute_reason || 'Hàng lỗi / sai mô tả'}</td>
       <td style="font-weight:800; color:#D97706;">${formatVND(d.total_paid)}</td>
       <td style="text-align:right;">
-        <button class="btn-fintab btn-fintab-success" style="margin-right:4px;" onclick="resolveDisputeAdmin(${d.id}, 'REFUND_BUYER')">
-          ✓ Hoàn 100% Tiền Cho Buyer
-        </button>
-        <button class="btn-fintab btn-fintab-primary" onclick="resolveDisputeAdmin(${d.id}, 'RELEASE_SELLER')">
-          ✓ Bác Bỏ & Chuyển Tiền Cho Seller
-        </button>
+        ${isAdmin ? `
+          <button class="btn-fintab btn-fintab-success" style="margin-right:4px;" onclick="resolveDisputeAdmin(${d.id}, 'REFUND_BUYER')">
+            ✓ Hoàn 100% Tiền Cho Buyer
+          </button>
+          <button class="btn-fintab btn-fintab-primary" onclick="resolveDisputeAdmin(${d.id}, 'RELEASE_SELLER')">
+            ✓ Bác Bỏ & Chuyển Tiền Cho Seller
+          </button>
+        ` : `
+          <span class="fintab-badge fintab-badge-warning" style="font-size:11px;">⏳ Chờ Admin phán quyết</span>
+        `}
       </td>
     </tr>
   `).join('');
@@ -1360,6 +1980,7 @@ window.openDisputeModal = openDisputeModal;
 window.submitDispute = submitDispute;
 window.openCreateListingModal = openCreateListingModal;
 window.submitCreateListing = submitCreateListing;
+window.handleImageUpload = handleImageUpload;
 window.openVoucherReceiptModal = openVoucherReceiptModal;
 window.resolveDisputeAdmin = resolveDisputeAdmin;
 window.openModal = openModal;
@@ -1370,3 +1991,17 @@ window.loadTransactionsTable = loadTransactionsTable;
 window.loadOrders = loadOrders;
 window.loadProducts = loadProducts;
 window.loadOverview = loadOverview;
+window.toggleSidebarCampusDropdown = toggleSidebarCampusDropdown;
+window.selectCampusCluster = selectCampusCluster;
+window.openLoginModal = openLoginModal;
+window.renderLoginCards = renderLoginCards;
+window.handleLogin = handleLogin;
+window.handleLogout = handleLogout;
+window.handleAuthClick = handleAuthClick;
+window.switchAuthTab = switchAuthTab;
+window.toggleLoginMethod = toggleLoginMethod;
+window.sendAuthOtp = sendAuthOtp;
+window.submitAuthLogin = submitAuthLogin;
+window.submitAuthRegister = submitAuthRegister;
+window.promptGoogleSSO = promptGoogleSSO;
+window.deleteProduct = deleteProduct;
