@@ -1,6 +1,7 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('node:path');
 const os = require('node:os');
+const bcrypt = require('bcryptjs');
 
 // In serverless environments (Vercel / Lambda), filesystem is read-only except /tmp
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -17,7 +18,7 @@ function createTablesIfNotExists() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
-      password TEXT DEFAULT '123456',
+      password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'BUYER',
       campus TEXT NOT NULL,
       student_code TEXT,
@@ -26,6 +27,15 @@ function createTablesIfNotExists() {
       eco_points INTEGER DEFAULT 0,
       co2_saved_kg REAL DEFAULT 0.0,
       avatar_url TEXT,
+      bonus_claimed INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS otp_codes (
+      email TEXT PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
 
@@ -174,14 +184,42 @@ function ensureSchemaMigrations() {
     db.exec('ALTER TABLE products ADD COLUMN bump_count INTEGER DEFAULT 0;');
   }
 
-  // 4. Users table password
+  // 4. Users table password & bonus_claimed
   if (!hasColumn('users', 'password')) {
-    db.exec("ALTER TABLE users ADD COLUMN password TEXT DEFAULT '123456';");
+    db.exec("ALTER TABLE users ADD COLUMN password TEXT NOT NULL DEFAULT '';");
+  }
+  if (!hasColumn('users', 'bonus_claimed')) {
+    db.exec("ALTER TABLE users ADD COLUMN bonus_claimed INTEGER DEFAULT 1;");
+  }
+
+  // Ensure otp_codes table exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS otp_codes (
+      email TEXT PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  // Migrate existing plaintext passwords to bcrypt hashes
+  try {
+    const existingUsers = db.prepare('SELECT id, password FROM users').all();
+    for (const u of existingUsers) {
+      if (!u.password || !u.password.startsWith('$2')) {
+        const hashed = bcrypt.hashSync(u.password || 'Student@123', 10);
+        db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashed, u.id);
+      }
+    }
+  } catch (err) {
+    // Ignore migration error if users table is not ready
   }
 }
 
 function dropAndCreateTables() {
   db.exec(`
+    DROP TABLE IF EXISTS otp_codes;
     DROP TABLE IF EXISTS wallet_transactions;
     DROP TABLE IF EXISTS orders;
     DROP TABLE IF EXISTS messages;
@@ -209,7 +247,7 @@ function initDatabase(forceReseed = false) {
 }
 
 function seedAllData() {
-  console.log('Seeding 8 realistic student products & TakeTwo wallet transactions...');
+  console.log('Seeding 50 realistic student products & TakeTwo wallet transactions with bcrypt passwords...');
 
   // Temporarily disable foreign keys during reseed
   db.exec('PRAGMA foreign_keys = OFF;');
@@ -224,14 +262,17 @@ function seedAllData() {
 
   // 2. Users (4 Users: Buyer, Seller, Student, Admin)
   const insertUser = db.prepare(`
-    INSERT INTO users (id, name, email, role, campus, student_code, rating_avg, review_count, eco_points, co2_saved_kg, avatar_url, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
+    INSERT INTO users (id, name, email, password, role, campus, student_code, rating_avg, review_count, eco_points, co2_saved_kg, avatar_url, bonus_claimed, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now', ?))
   `);
 
-  insertUser.run(1, 'Vũ Hán Tuấn', 'tuanvhhe194875@fpt.edu.vn', 'BUYER', 'Khu đô thị Hòa Lạc (ĐH FPT)', 'HE194875', 4.9, 14, 450, 18.5, 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80', '-30 days');
-  insertUser.run(2, 'Nguyễn Minh Anh (Chủ Gian Hàng)', 'minhanh.seller@fpt.edu.vn', 'SELLER', 'Khu đô thị Hòa Lạc (ĐH FPT / KTX Dom A)', 'SE182210', 5.0, 48, 980, 42.0, 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&q=80', '-60 days');
-  insertUser.run(3, 'Trần Bảo Long', 'longtb.vnu@vnu.edu.vn', 'SELLER', 'Khu đô thị Hòa Lạc (ĐHQG Hà Nội)', 'QH20230911', 4.8, 19, 380, 14.5, 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80', '-20 days');
-  insertUser.run(4, 'Ban Quản Trị TakeTwo', 'admin@taketwo.vn', 'ADMIN', 'Trụ sở Hà Nội', 'ADMIN01', 5.0, 0, 0, 0.0, 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80', '-90 days');
+  const studentHashedPassword = bcrypt.hashSync('Student@123', 10);
+  const adminHashedPassword = bcrypt.hashSync('Admin@TakeTwo2026', 10);
+
+  insertUser.run(1, 'Vũ Hán Tuấn', 'tuanvhhe194875@fpt.edu.vn', studentHashedPassword, 'BUYER', 'Khu đô thị Hòa Lạc (ĐH FPT)', 'HE194875', 4.9, 14, 450, 18.5, 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80', '-30 days');
+  insertUser.run(2, 'Nguyễn Minh Anh (Chủ Gian Hàng)', 'minhanh.seller@fpt.edu.vn', studentHashedPassword, 'SELLER', 'Khu đô thị Hòa Lạc (ĐH FPT / KTX Dom A)', 'SE182210', 5.0, 48, 980, 42.0, 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=150&q=80', '-60 days');
+  insertUser.run(3, 'Trần Bảo Long', 'longtb.vnu@vnu.edu.vn', studentHashedPassword, 'SELLER', 'Khu đô thị Hòa Lạc (ĐHQG Hà Nội)', 'QH20230911', 4.8, 19, 380, 14.5, 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80', '-20 days');
+  insertUser.run(4, 'Ban Quản Trị TakeTwo', 'admin@taketwo.vn', adminHashedPassword, 'ADMIN', 'Trụ sở Hà Nội', 'ADMIN01', 5.0, 0, 0, 0.0, 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80', '-90 days');
 
   // 3. Wallets (Số dư mẫu + lượt đẩy bài VIP)
   const insertWallet = db.prepare("INSERT INTO wallets (user_id, available_balance, escrow_balance, boost_credits, updated_at) VALUES (?, ?, ?, ?, datetime('now'))");

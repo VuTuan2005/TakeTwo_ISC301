@@ -11,7 +11,66 @@ let checkoutProduct = null;
 let bumpTargetProduct = null;
 let currentTransactionsList = [];
 let liveInterval = null;
+let isDemoMode = true;
 
+// Centralized API fetch helper with automatic credentials (session cookies) and 401 handling
+async function apiFetch(url, options = {}) {
+  options.credentials = 'include';
+  options.headers = options.headers || {};
+  if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(options.body);
+  }
+  const res = await window.fetch(url, options);
+  if (res.status === 401) {
+    if (currentUser && !url.includes('/api/auth/logout') && !url.includes('/api/auth/login') && !url.includes('/api/me')) {
+      currentUser = null;
+      currentWallet = { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
+      updateHeaderWalletDisplay();
+      updateRoleNavigation();
+      showToast('Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại!', 'warning');
+    }
+  }
+  return res;
+}
+
+function updateRoleNavigation() {
+  const isAdmin = Boolean(currentUser && currentUser.role === 'ADMIN');
+  const navDisputes = $id('nav-disputes');
+  const navSectionAdmin = $id('navSectionAdmin');
+  
+  if (navDisputes) {
+    navDisputes.style.display = isAdmin ? 'flex' : 'none';
+  }
+  if (navSectionAdmin) {
+    navSectionAdmin.style.display = isAdmin ? 'block' : 'none';
+  }
+
+  // If non-admin is currently viewing disputes tab, redirect safely to marketplace
+  const viewDisputes = $id('view-disputes');
+  if (!isAdmin && viewDisputes && viewDisputes.style.display === 'block') {
+    switchNav('marketplace');
+  }
+
+  // Sổ quỹ Thu chi: Only show "Xem tất cả sổ quỹ toàn sàn" for ADMIN
+  const chkEl = $id('chkViewAllLedger');
+  if (chkEl && chkEl.parentElement) {
+    chkEl.parentElement.style.display = isAdmin ? 'flex' : 'none';
+    if (!isAdmin) chkEl.checked = false;
+  }
+}
+
+function renderDemoBanner(isDemo) {
+  isDemoMode = Boolean(isDemo);
+  const banner = $id('demoModeBanner');
+  if (banner) banner.style.display = isDemoMode ? 'block' : 'none';
+
+  const userSelect = $id('userSwitcher');
+  if (userSelect) userSelect.style.display = isDemoMode ? 'block' : 'none';
+
+  const demoTab = $id('btnTabDemo');
+  if (demoTab) demoTab.style.display = isDemoMode ? 'block' : 'none';
+}
 // Safe DOM Access Utilities
 function $id(id) {
   return document.getElementById(id);
@@ -42,13 +101,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function initApp() {
-  try { await loadUsers(); } catch (e) { console.error('Error loadUsers:', e); }
   try { await loadMe(); } catch (e) { console.error('Error loadMe:', e); }
+  try { await loadUsers(); } catch (e) { console.error('Error loadUsers:', e); }
   try { await loadBumpPackages(); } catch (e) { console.error('Error loadBumpPackages:', e); }
+  try { updateRoleNavigation(); } catch (e) { console.error('Error updateRoleNavigation:', e); }
   try { await loadOverview(); } catch (e) { console.error('Error loadOverview:', e); }
   try { await loadProducts(); } catch (e) { console.error('Error loadProducts:', e); }
-  try { await loadOrders(); } catch (e) { console.error('Error loadOrders:', e); }
-  try { await loadTransactionsTable(); } catch (e) { console.error('Error loadTransactionsTable:', e); }
+  if (currentUser) {
+    try { await loadOrders(); } catch (e) { console.error('Error loadOrders:', e); }
+    try { await loadTransactionsTable(); } catch (e) { console.error('Error loadTransactionsTable:', e); }
+  }
 
   // Periodic refresh for auto-confirm 5-day SLAs & live counters
   if (liveInterval) clearInterval(liveInterval);
@@ -62,13 +124,13 @@ async function initApp() {
 // -------------------------------------------------------------
 async function loadUsers() {
   try {
-    const res = await fetch('/api/users?_t=' + Date.now(), { cache: 'no-store' });
+    const res = await apiFetch('/api/users?_t=' + Date.now(), { cache: 'no-store' });
     allUsers = await res.json();
     const select = $id('userSwitcher');
-    if (select) {
-      const savedId = localStorage.getItem('takeTwo_activeUserId') || '1';
+    if (select && Array.isArray(allUsers)) {
+      const activeId = currentUser ? currentUser.id : (localStorage.getItem('takeTwo_activeUserId') || '1');
       select.innerHTML = allUsers.map(u => `
-        <option value="${u.id}" ${String(u.id) === String(savedId) ? 'selected' : ''}>
+        <option value="${u.id}" ${String(u.id) === String(activeId) ? 'selected' : ''}>
           ${u.role === 'ADMIN' ? '🛡️ ' + u.name : (u.role === 'SELLER' ? '🏪 ' + u.name : '👤 ' + u.name)} (${u.role})
         </option>
       `).join('');
@@ -80,27 +142,35 @@ async function loadUsers() {
 
 async function onUserSwitch(userId) {
   try {
-    localStorage.setItem('takeTwo_activeUserId', String(userId));
-    const select = $id('userSwitcher');
-    if (select && select.value !== String(userId)) {
-      select.value = String(userId);
-    }
-
-    const res = await fetch(`/api/me?user_id=${userId}&_t=${Date.now()}`, {
-      headers: { 'x-user-id': String(userId) },
-      cache: 'no-store'
+    const res = await apiFetch('/api/auth/demo-switch', {
+      method: 'POST',
+      body: { user_id: userId }
     });
     const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Lỗi khi đổi tài khoản demo', 'error');
+      return;
+    }
     currentUser = data.user;
     currentWallet = data.wallet || { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
+    if (currentUser) {
+      localStorage.setItem('takeTwo_activeUserId', String(currentUser.id));
+    }
     updateHeaderWalletDisplay();
-    showToast(`Đã chuyển sang tài khoản: ${currentUser.name} (${currentUser.role})`, 'success');
+    updateRoleNavigation();
+    if (currentUser) {
+      showToast(`Đã chuyển sang tài khoản: ${currentUser.name} (${currentUser.role})`, 'success');
+    } else {
+      showToast('Đã chuyển sang chế độ Khách (Guest)', 'info');
+    }
 
     // Refresh all views with fresh data
     await loadOverview();
     await loadProducts();
-    await loadOrders();
-    await loadTransactionsTable();
+    if (currentUser) {
+      await loadOrders();
+      await loadTransactionsTable();
+    }
   } catch (err) {
     showToast('Lỗi khi đổi tài khoản', 'error');
   }
@@ -108,27 +178,18 @@ async function onUserSwitch(userId) {
 
 async function loadMe() {
   try {
-    const userSelect = $id('userSwitcher');
-    const savedId = localStorage.getItem('takeTwo_activeUserId');
-    if (savedId === 'guest') {
-      currentUser = null;
-      currentWallet = { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
-      updateHeaderWalletDisplay();
-      return;
-    }
-    const activeId = savedId || (userSelect && userSelect.value) || 1;
-    if (userSelect && userSelect.value !== String(activeId)) {
-      userSelect.value = String(activeId);
-    }
-
-    const res = await fetch(`/api/me?user_id=${activeId}&_t=${Date.now()}`, {
-      headers: { 'x-user-id': String(activeId) },
-      cache: 'no-store'
-    });
+    const res = await apiFetch(`/api/me?_t=${Date.now()}`, { cache: 'no-store' });
     const data = await res.json();
     currentUser = data.user;
     currentWallet = data.wallet || { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
+    renderDemoBanner(data.demo_mode);
     updateHeaderWalletDisplay();
+    updateRoleNavigation();
+
+    const userSelect = $id('userSwitcher');
+    if (userSelect && currentUser) {
+      userSelect.value = String(currentUser.id);
+    }
   } catch (err) {
     console.error('Error loading current user:', err);
   }
@@ -259,7 +320,7 @@ async function sendAuthOtp(type) {
   }
 
   try {
-    const res = await fetch('/api/auth/send-otp', {
+    const res = await apiFetch('/api/auth/send-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, type })
@@ -329,7 +390,7 @@ async function submitAuthLogin() {
   }
 
   try {
-    const res = await fetch('/api/auth/login', {
+    const res = await apiFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, otp_code, login_type: method })
@@ -377,7 +438,7 @@ async function submitAuthRegister() {
   }
 
   try {
-    const res = await fetch('/api/auth/register', {
+    const res = await apiFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, student_code, email, role, campus, password, otp_code })
@@ -413,7 +474,7 @@ async function promptGoogleSSO() {
   const name = cleanEmail.split('@')[0].replace(/[._]/g, ' ').toUpperCase();
 
   try {
-    const res = await fetch('/api/auth/google', {
+    const res = await apiFetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -489,16 +550,21 @@ async function handleLogin(userId) {
   showToast(`Đăng nhập thành công! Chào mừng ${currentUser ? currentUser.name : ''}`, 'success');
 }
 
-function handleLogout() {
-  localStorage.setItem('takeTwo_activeUserId', 'guest');
-  currentUser = null;
-  currentWallet = { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
-  updateHeaderWalletDisplay();
-  showToast('Đã đăng xuất khỏi tài khoản TakeTwo', 'info');
-  loadOverview();
-  loadProducts();
-  loadOrders();
-  loadTransactionsTable();
+async function handleLogout() {
+  try {
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+    currentUser = null;
+    currentWallet = { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
+    localStorage.removeItem('takeTwo_activeUserId');
+    updateHeaderWalletDisplay();
+    updateRoleNavigation();
+    showToast('Đã đăng xuất khỏi tài khoản TakeTwo', 'info');
+    switchNav('marketplace');
+    await loadProducts();
+    await loadOverview();
+  } catch (err) {
+    showToast('Lỗi khi đăng xuất', 'error');
+  }
 }
 
 function handleAuthClick() {
@@ -573,11 +639,10 @@ function updateHeaderWalletDisplay() {
 // Quick Top-up (+100k, +500k) directly from topbar or KPI cards
 async function quickTopup(amount) {
   try {
-    const res = await fetch('/api/wallet/topup', {
+    const res = await apiFetch('/api/wallet/topup', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         amount: amount,
@@ -648,22 +713,32 @@ function executeGlobalSearch() {
 // -------------------------------------------------------------
 async function loadOverview() {
   try {
-    const resMetrics = await fetch('/api/admin/metrics?_t=' + Date.now(), { cache: 'no-store' });
-    const metrics = await resMetrics.json();
+    let metrics = {};
+    if (currentUser && currentUser.role === 'ADMIN') {
+      try {
+        const resMetrics = await apiFetch('/api/admin/metrics?_t=' + Date.now(), { cache: 'no-store' });
+        if (resMetrics.ok) metrics = await resMetrics.json();
+      } catch (e) {}
+    }
 
-    $text('kpiOverviewGMV', formatVND(metrics.gmv_completed || 1280000));
-    $text('kpiOverviewEscrow', formatVND(metrics.escrow_held_pool || 55000));
-    $text('kpiOverviewWalletAvail', formatVND(currentWallet.available_balance));
-    $text('kpiOverviewBoostCredits', `${currentWallet.boost_credits || 0} lượt`);
+    $text('kpiOverviewGMV', formatVND(metrics.gmv_completed || 0));
+    $text('kpiOverviewEscrow', formatVND(metrics.escrow_held_pool || (currentWallet ? currentWallet.escrow_balance : 0)));
+    $text('kpiOverviewWalletAvail', formatVND(currentWallet ? currentWallet.available_balance : 0));
+    $text('kpiOverviewBoostCredits', `${(currentWallet && currentWallet.boost_credits) || 0} lượt`);
 
     // Orders summary
-    const resOrders = await fetch('/api/orders?_t=' + Date.now(), {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
-      cache: 'no-store'
-    });
-    const orders = await resOrders.json();
+    let orders = [];
+    if (currentUser) {
+      try {
+        const resOrders = await apiFetch('/api/orders?_t=' + Date.now(), { cache: 'no-store' });
+        if (resOrders.ok) {
+          const fetched = await resOrders.json();
+          if (Array.isArray(fetched)) orders = fetched;
+        }
+      } catch (e) {}
+    }
     const activeOrders = orders.filter(o => o.status === 'DELIVERING' || o.status === 'REQUESTED');
-    $text('kpiOverviewOrdersCount', `${orders.length} đơn (${activeOrders.length} đang xử lý)`);
+    $text('kpiOverviewOrdersCount', currentUser ? `${orders.length} đơn (${activeOrders.length} đang xử lý)` : 'Đăng nhập để xem đơn');
 
     // Overview SLA Order Box: prioritize delivering, then requested, then disputed, then completed
     const deliveringOrder = orders.find(o => o.status === 'DELIVERING');
@@ -756,8 +831,7 @@ async function loadOverview() {
     }
 
     // Recent 5 Ledger Items
-    const resTx = await fetch('/api/transactions?tab=all&view_all=true&_t=' + Date.now(), {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+    const resTx = await apiFetch('/api/transactions?tab=all&view_all=true&_t=' + Date.now(), {
       cache: 'no-store'
     });
     const txData = await resTx.json();
@@ -809,8 +883,7 @@ async function loadProducts(overrideSearch) {
   const url = `/api/products?campus=${encodeURIComponent(campus)}&category=${encodeURIComponent(currentCategory)}&condition=${encodeURIComponent(condition)}&search=${encodeURIComponent(search)}&_t=${Date.now()}`;
   
   try {
-    const res = await fetch(url, {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+    const res = await apiFetch(url, {
       cache: 'no-store'
     });
     const products = await res.json();
@@ -932,12 +1005,9 @@ function renderProducts(products) {
 async function deleteProduct(productId) {
   if (!confirm('Bạn có chắc chắn muốn gỡ bài đăng này khỏi sàn TakeTwo không?')) return;
   try {
-    const res = await fetch(`/api/products/${productId}/delete`, {
+    const res = await apiFetch(`/api/products/${productId}/delete`, {
       method: 'POST',
-      headers: {
-        'x-user-id': currentUser ? currentUser.id : 1
-      }
-    });
+      });
     const data = await res.json();
     if (data.error) {
       showToast(data.error, 'error');
@@ -954,11 +1024,10 @@ async function deleteProduct(productId) {
 // 1-Click Bump Product to Top 1
 async function quickBumpProduct(productId) {
   try {
-    const res = await fetch(`/api/products/${productId}/bump`, {
+    const res = await apiFetch(`/api/products/${productId}/bump`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({})
     });
@@ -988,6 +1057,12 @@ function setTransactionTab(tab, btn) {
 }
 
 async function loadTransactionsTable() {
+  if (!currentUser) {
+    currentTransactionsList = [];
+    const tbody = $id('transactionsTableBody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:32px; color:var(--text-muted);">Vui lòng đăng nhập để xem sổ quỹ giao dịch</td></tr>`;
+    return;
+  }
   const search = $val('transactionSearchInput', '');
   const chkEl = $id('chkViewAllLedger');
   let viewAll = false;
@@ -1005,8 +1080,7 @@ async function loadTransactionsTable() {
   const url = `/api/transactions?tab=${currentTransactionTab}&search=${encodeURIComponent(search)}&view_all=${viewAll}&_t=${Date.now()}`;
   
   try {
-    const res = await fetch(url, {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+    const res = await apiFetch(url, {
       cache: 'no-store'
     });
     const data = await res.json();
@@ -1103,12 +1177,15 @@ function openVoucherReceiptModal(index) {
 // -------------------------------------------------------------
 async function loadOrders() {
   try {
-    const res = await fetch('/api/orders?_t=' + Date.now(), {
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 },
+    if (!currentUser) {
+      renderOrders([]);
+      return;
+    }
+    const res = await apiFetch('/api/orders?_t=' + Date.now(), {
       cache: 'no-store'
     });
     const orders = await res.json();
-    renderOrders(orders);
+    renderOrders(Array.isArray(orders) ? orders : []);
   } catch (err) {
     console.error('Error loading orders:', err);
   }
@@ -1185,7 +1262,11 @@ function renderOrders(orders) {
         actionButtons += `<span style="color:#94A3B8; font-size:12px;">Đang giao</span>`;
       }
     } else if (o.status === 'DISPUTED') {
-      actionButtons += `<button class="btn-fintab btn-fintab-primary" style="padding:4px 8px; font-size:11.5px;" onclick="switchNav('disputes')">⚖️ Trọng Tài</button>`;
+      if (isAdmin) {
+        actionButtons += `<button class="btn-fintab btn-fintab-primary" style="padding:4px 8px; font-size:11.5px;" onclick="switchNav('disputes')">⚖️ Xử lý Trọng Tài</button>`;
+      } else {
+        actionButtons += `<span class="fintab-badge fintab-badge-danger" style="font-size:11px;">⚠️ Đang khiếu nại (Chờ Admin)</span>`;
+      }
     } else if (o.status === 'COMPLETED' || o.status === 'COMPLETED_AUTO') {
       actionButtons += `<span class="fintab-badge fintab-badge-success" style="font-size:11px;">✓ Đã giải ngân</span>`;
     }
@@ -1227,12 +1308,9 @@ function renderOrders(orders) {
 // ⚡ Giả lập qua 5 ngày (Auto-confirm SLA simulation for presentation)
 async function simulate5Days(orderId) {
   try {
-    const res = await fetch(`/api/orders/${orderId}/simulate-5days`, {
+    const res = await apiFetch(`/api/orders/${orderId}/simulate-5days`, {
       method: 'POST',
-      headers: {
-        'x-user-id': currentUser ? currentUser.id : 1
-      }
-    });
+      });
     const data = await res.json();
     if (data.error) {
       showToast(data.error, 'error');
@@ -1252,11 +1330,10 @@ async function simulate5Days(orderId) {
 // Quick ship order helper
 async function quickShipOrder(orderId) {
   try {
-    const res = await fetch(`/api/orders/${orderId}/ship`, {
+    const res = await apiFetch(`/api/orders/${orderId}/ship`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ tracking_code: 'TK-SHIP-' + Math.floor(10000 + Math.random() * 90000) })
     });
@@ -1295,10 +1372,9 @@ function updateCountdowns() {
 // -------------------------------------------------------------
 async function sellerAcceptOrder(orderId) {
   try {
-    const res = await fetch(`/api/orders/${orderId}/accept`, {
+    const res = await apiFetch(`/api/orders/${orderId}/accept`, {
       method: 'POST',
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 }
-    });
+      });
     const data = await res.json();
     showToast(data.message, 'success');
     loadOrders();
@@ -1311,11 +1387,10 @@ async function sellerAcceptOrder(orderId) {
 async function sellerShipOrder(orderId) {
   const trackingCode = prompt('Nhập mã vận đơn bưu cục (hoặc để mặc định):', 'TK-SHIP-' + Math.floor(10000 + Math.random() * 90000));
   try {
-    const res = await fetch(`/api/orders/${orderId}/ship`, {
+    const res = await apiFetch(`/api/orders/${orderId}/ship`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ tracking_code: trackingCode })
     });
@@ -1331,10 +1406,9 @@ async function sellerShipOrder(orderId) {
 async function buyerConfirmOrder(orderId) {
   if (!confirm('Bạn xác nhận đã nhận được món đồ đúng mô tả và đồng ý giải phóng tiền Escrow cho Người bán?')) return;
   try {
-    const res = await fetch(`/api/orders/${orderId}/confirm`, {
+    const res = await apiFetch(`/api/orders/${orderId}/confirm`, {
       method: 'POST',
-      headers: { 'x-user-id': currentUser ? currentUser.id : 1 }
-    });
+      });
     const data = await res.json();
     showToast(data.message, 'success');
     await loadMe();
@@ -1361,11 +1435,10 @@ async function submitDispute() {
   }
 
   try {
-    const res = await fetch(`/api/orders/${orderId}/dispute`, {
+    const res = await apiFetch(`/api/orders/${orderId}/dispute`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ reason })
     });
@@ -1389,7 +1462,7 @@ async function openCheckoutModal(productId) {
     return;
   }
   try {
-    const res = await fetch(`/api/products/${productId}`);
+    const res = await apiFetch(`/api/products/${productId}`);
     checkoutProduct = await res.json();
 
     if (currentUser && currentUser.id === checkoutProduct.seller_id) {
@@ -1468,11 +1541,10 @@ async function submitCheckout() {
   }
 
   try {
-    const res = await fetch('/api/orders/checkout', {
+    const res = await apiFetch('/api/orders/checkout', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         product_id: checkoutProduct.id,
@@ -1517,11 +1589,10 @@ function setTopupAmount(amt) {
 async function simulateTopupSuccess() {
   const amt = $val('topupCustomAmount', '100000');
   try {
-    const res = await fetch('/api/wallet/topup', {
+    const res = await apiFetch('/api/wallet/topup', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         amount: amt,
@@ -1554,11 +1625,10 @@ async function submitWithdraw() {
   }
 
   try {
-    const res = await fetch('/api/wallet/withdraw', {
+    const res = await apiFetch('/api/wallet/withdraw', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ amount, bank_name: bankName, bank_account: bankAccount })
     });
@@ -1582,7 +1652,7 @@ async function submitWithdraw() {
 // -------------------------------------------------------------
 async function loadBumpPackages() {
   try {
-    const res = await fetch('/api/bump-packages');
+    const res = await apiFetch('/api/bump-packages');
     bumpPackages = await res.json();
   } catch (err) {
     console.error('Error loading bump packages:', err);
@@ -1630,11 +1700,10 @@ async function buyBumpPackage(packageId) {
     return;
   }
   try {
-    const res = await fetch('/api/bump-packages/buy', {
+    const res = await apiFetch('/api/bump-packages/buy', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ package_id: packageId })
     });
@@ -1660,7 +1729,7 @@ function promptSelectProductForBump(packageId) {
 
 async function openBumpModal(productId) {
   try {
-    const res = await fetch(`/api/products/${productId}`);
+    const res = await apiFetch(`/api/products/${productId}`);
     bumpTargetProduct = await res.json();
 
     $text('bumpProductSummary', `Món đồ: ${bumpTargetProduct.title} (${formatVND(bumpTargetProduct.price)})`);
@@ -1692,11 +1761,10 @@ async function openBumpModal(productId) {
 async function execute1ClickBump(packageId) {
   if (!bumpTargetProduct) return;
   try {
-    const res = await fetch(`/api/products/${bumpTargetProduct.id}/bump`, {
+    const res = await apiFetch(`/api/products/${bumpTargetProduct.id}/bump`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ package_id: packageId })
     });
@@ -1800,11 +1868,10 @@ async function submitCreateListing() {
   const finalImage = image_url || defaultCategoryImages[category_id] || defaultCategoryImages.books;
 
   try {
-    const res = await fetch('/api/products', {
+    const res = await apiFetch('/api/products', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         title, category_id, condition_level, price, original_price,
@@ -1840,17 +1907,26 @@ async function submitCreateListing() {
 // DISPUTES & ADMIN 5 KPIS
 // -------------------------------------------------------------
 async function loadDisputesView() {
+  if (!currentUser || currentUser.role !== 'ADMIN') {
+    $text('metricNorthStar', '-');
+    $text('metricGMV', '-');
+    $text('metricActiveListings', '-');
+    $text('metricRepeatRate', '-');
+    const tbody = $id('adminDisputesBody');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-muted);">🔒 Chỉ Quản Trị Viên (Admin TakeTwo) mới có quyền truy cập tab này.</td></tr>`;
+    return;
+  }
   try {
-    const resMetrics = await fetch('/api/admin/metrics?_t=' + Date.now(), { cache: 'no-store' });
+    const resMetrics = await apiFetch('/api/admin/metrics?_t=' + Date.now(), { cache: 'no-store' });
     const data = await resMetrics.json();
     $text('metricNorthStar', data.north_star_verified_transactions);
     $text('metricGMV', formatVND(data.gmv_completed));
     $text('metricActiveListings', data.active_real_listings);
     $text('metricRepeatRate', (data.repeat_seller_rate || 100) + '%');
 
-    const resOrders = await fetch('/api/orders?_t=' + Date.now(), { cache: 'no-store' });
+    const resOrders = await apiFetch('/api/orders?_t=' + Date.now(), { cache: 'no-store' });
     const orders = await resOrders.json();
-    const disputes = orders.filter(o => o.status === 'DISPUTED');
+    const disputes = Array.isArray(orders) ? orders.filter(o => o.status === 'DISPUTED') : [];
     renderAdminDisputes(disputes);
   } catch (err) {
     console.error('Error loading disputes:', err);
@@ -1894,11 +1970,10 @@ function renderAdminDisputes(disputes) {
 async function resolveDisputeAdmin(orderId, decision) {
   if (!confirm(`Bạn chắc chắn muốn thực thi phán quyết "${decision}" cho đơn hàng này?`)) return;
   try {
-    const res = await fetch(`/api/orders/${orderId}/admin-resolve`, {
+    const res = await apiFetch(`/api/orders/${orderId}/admin-resolve`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-user-id': currentUser ? currentUser.id : 1
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ decision })
     });

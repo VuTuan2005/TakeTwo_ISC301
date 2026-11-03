@@ -12,6 +12,7 @@ node_modules/
 .env.local
 *.log
 npm-debug.log*
+scratch/
 
 # OS Files
 .DS_Store

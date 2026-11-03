@@ -1,7 +1,20 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('node:path');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const cookieParser = require('cookie-parser');
 const { db, initDatabase } = require('./db');
+
+// Environment & Security Configurations
+const JWT_SECRET = process.env.JWT_SECRET || 'taketwo_jwt_secret_dev_key_2026';
+const DEMO_MODE = process.env.DEMO_MODE !== 'false'; // Defaults to true for university demo, set DEMO_MODE=false to enforce strict security
+const ALLOWED_CAMPUS_DOMAINS = [
+  'fpt.edu.vn', 'fe.edu.vn', 'vnu.edu.vn', 'hust.edu.vn',
+  'neu.edu.vn', 'ftu.edu.vn', 'ajc.edu.vn', 'hanu.edu.vn',
+  'ptit.edu.vn', 'hau.edu.vn', 'tlu.edu.vn', 'hvnh.edu.vn',
+  'hlu.edu.vn', 'utc.edu.vn', 'taketwo.vn'
+];
 
 // Initialize database schema and seeds
 initDatabase();
@@ -9,7 +22,11 @@ initDatabase();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
+app.use(cookieParser());
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
@@ -23,21 +40,62 @@ app.use('/api', (req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Middleware to get current active user
+// Secure JWT Session Authentication Middleware
+// Completely eliminates trusting spoofed x-user-id / user_id headers
 app.use((req, res, next) => {
-  const userId = req.headers['x-user-id'] || req.query.user_id;
-  if (userId === 'guest' || userId === '0') {
-    req.currentUser = null;
-  } else if (userId) {
-    req.currentUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) || null;
-  } else {
-    req.currentUser = db.prepare('SELECT * FROM users WHERE id = 1').get();
+  req.currentUser = null;
+  const token = req.cookies?.taketwo_token;
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded && decoded.userId) {
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId);
+        if (user) {
+          req.currentUser = user;
+        }
+      }
+    } catch (err) {
+      // Invalid or expired token -> guest (req.currentUser = null)
+      req.currentUser = null;
+    }
   }
   next();
 });
 
-// In-memory store for OTP verification codes
-const otpStore = new Map();
+// Authentication guard: returns 401 Unauthorized without crashing
+function requireAuth(req, res, next) {
+  if (!req.currentUser) {
+    return res.status(401).json({ error: 'Vui lòng đăng nhập để thực hiện thao tác này!' });
+  }
+  next();
+}
+
+// Admin guard: returns 403 Forbidden for non-admin users
+function requireAdmin(req, res, next) {
+  if (!req.currentUser) {
+    return res.status(401).json({ error: 'Vui lòng đăng nhập tài khoản Quản trị viên!' });
+  }
+  if (req.currentUser.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Bạn không có quyền quản trị viên (Admin only)!' });
+  }
+  next();
+}
+
+// Session cookie helper
+function setSessionCookie(res, user) {
+  const token = jwt.sign(
+    { userId: user.id, email: user.email, role: user.role },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+  res.cookie('taketwo_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  });
+  return token;
+}
 
 // Periodic background check for 5-day auto confirmations
 function checkAutoConfirmations() {
@@ -110,19 +168,21 @@ function completeOrderFunds(order, finalStatus = 'COMPLETED') {
 }
 
 // -------------------------------------------------------------
-// USER & AUTH APIS (AUTHENTIC REAL-WORLD AUTH WITH OTP & GOOGLE SSO)
+// USER & AUTH APIS (SECURE JWT SESSION COOKIES, BCRYPT & DB-BACKED OTP)
 // -------------------------------------------------------------
 app.get('/api/me', (req, res) => {
   if (!req.currentUser) {
     return res.json({
       user: null,
-      wallet: { available_balance: 0, escrow_balance: 0, boost_credits: 0 }
+      wallet: { available_balance: 0, escrow_balance: 0, boost_credits: 0 },
+      demo_mode: DEMO_MODE
     });
   }
   const wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(req.currentUser.id);
   res.json({
     user: req.currentUser,
-    wallet: wallet || { available_balance: 0, escrow_balance: 0, boost_credits: 0 }
+    wallet: wallet || { available_balance: 0, escrow_balance: 0, boost_credits: 0 },
+    demo_mode: DEMO_MODE
   });
 });
 
@@ -131,7 +191,7 @@ app.get('/api/users', (req, res) => {
   res.json(users);
 });
 
-// 1. Send OTP Verification Code to Student Email
+// 1. Send OTP Verification Code to Student Email (Stored securely in DB)
 app.post('/api/auth/send-otp', (req, res) => {
   const { email, type } = req.body;
   if (!email || !email.includes('@')) {
@@ -139,24 +199,50 @@ app.post('/api/auth/send-otp', (req, res) => {
   }
 
   const cleanEmail = email.trim().toLowerCase();
-  const existingUser = db.prepare('SELECT id, name, email FROM users WHERE LOWER(email) = ?').get(cleanEmail);
+  const domain = cleanEmail.split('@')[1];
 
+  // Validate campus domain
+  if (!DEMO_MODE && !ALLOWED_CAMPUS_DOMAINS.includes(domain)) {
+    return res.status(400).json({ 
+      error: `TakeTwo chỉ hỗ trợ sinh viên các trường ĐH tại Hà Nội. Tên miền @${domain} không thuộc danh sách hỗ trợ (@fpt.edu.vn, @vnu.edu.vn, @hust.edu.vn,...)!` 
+    });
+  }
+
+  const existingUser = db.prepare('SELECT id, name, email FROM users WHERE LOWER(email) = ?').get(cleanEmail);
   if (type === 'register' && existingUser) {
     return res.status(400).json({ error: 'Email này đã được đăng ký tài khoản trước đó. Vui lòng chuyển sang tab Đăng Nhập!' });
   }
 
-  // Generate 6-digit secure numeric OTP
+  // Generate 6-digit numeric OTP and hash it with bcrypt
   const otpCode = String(Math.floor(100000 + Math.random() * 900000));
+  const codeHash = bcrypt.hashSync(otpCode, 8);
   const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes validity
-  otpStore.set(cleanEmail, { code: otpCode, expiresAt, type: type || 'auth' });
 
-  console.log(`[TakeTwo Auth OTP] Code ${otpCode} generated for ${cleanEmail} (${type || 'general'})`);
+  // Save / Update in DB otp_codes table
+  db.prepare(`
+    INSERT INTO otp_codes (email, code_hash, expires_at, attempts, created_at)
+    VALUES (?, ?, ?, 0, datetime('now'))
+    ON CONFLICT(email) DO UPDATE SET
+      code_hash = excluded.code_hash,
+      expires_at = excluded.expires_at,
+      attempts = 0,
+      created_at = excluded.created_at
+  `).run(cleanEmail, codeHash, expiresAt);
 
-  res.json({
+  console.log(`[TakeTwo OTP] Secure OTP code generated for ${cleanEmail} (Expires in 5m)`);
+
+  const responsePayload = {
     success: true,
-    message: `Mã OTP đã được gửi về email ${cleanEmail}! (Mã thử nghiệm demo: ${otpCode})`,
-    demo_otp: otpCode
-  });
+    message: `Mã OTP xác thực đã được gửi về email ${cleanEmail}! (Hiệu lực trong 5 phút)`
+  };
+
+  // Only expose demo_otp when DEMO_MODE is active
+  if (DEMO_MODE) {
+    responsePayload.demo_otp = otpCode;
+    responsePayload.message += ` [Chế độ Demo: Mã là ${otpCode}]`;
+  }
+
+  res.json(responsePayload);
 });
 
 // 2. Register New Student Account (with OTP & Welcome Bonus +100k)
@@ -166,38 +252,64 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ error: 'Vui lòng điền đầy đủ họ tên, email trường và mật khẩu!' });
   }
 
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Mật khẩu phải có độ dài tối thiểu từ 6 ký tự trở lên!' });
+  }
+
   const cleanEmail = email.trim().toLowerCase();
+  const domain = cleanEmail.split('@')[1];
+
+  // Enforce campus email restriction
+  if (!DEMO_MODE && !ALLOWED_CAMPUS_DOMAINS.includes(domain)) {
+    return res.status(400).json({
+      error: `Chỉ chấp nhận email sinh viên trường (@fpt.edu.vn, @vnu.edu.vn, @hust.edu.vn,...)`
+    });
+  }
+
   const existingUser = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(cleanEmail);
   if (existingUser) {
     return res.status(400).json({ error: 'Email này đã tồn tại trên hệ thống TakeTwo!' });
   }
 
-  // Verify OTP (allow '123456' as universal test code if not found in memory)
-  const storedOtp = otpStore.get(cleanEmail);
-  const isDemoFallback = String(otp_code).trim() === '123456';
-  if (!isDemoFallback) {
-    if (!storedOtp) {
-      return res.status(400).json({ error: 'Vui lòng bấm "Gửi mã OTP" về email trước!' });
+  // Verify OTP from database
+  const otpRow = db.prepare('SELECT * FROM otp_codes WHERE email = ?').get(cleanEmail);
+  const isUniversalDemo = DEMO_MODE && String(otp_code).trim() === '123456';
+
+  if (!isUniversalDemo) {
+    if (!otpRow) {
+      return res.status(400).json({ error: 'Vui lòng bấm "Nhận Mã OTP" về email trước!' });
     }
-    if (storedOtp.code !== String(otp_code).trim()) {
-      return res.status(400).json({ error: 'Mã xác thực OTP không chính xác!' });
+    if (Date.now() > otpRow.expires_at) {
+      db.prepare('DELETE FROM otp_codes WHERE email = ?').run(cleanEmail);
+      return res.status(400).json({ error: 'Mã OTP đã hết hiệu lực (quá 5 phút). Vui lòng yêu cầu mã mới!' });
     }
-    if (Date.now() > storedOtp.expiresAt) {
-      return res.status(400).json({ error: 'Mã OTP đã hết hiệu lực (quá 5 phút). Vui lòng lấy mã mới!' });
+    if (otpRow.attempts >= 5) {
+      db.prepare('DELETE FROM otp_codes WHERE email = ?').run(cleanEmail);
+      return res.status(400).json({ error: 'Bạn đã nhập sai OTP quá 5 lần. Vui lòng yêu cầu mã mới!' });
+    }
+
+    const isMatch = bcrypt.compareSync(String(otp_code).trim(), otpRow.code_hash);
+    if (!isMatch) {
+      db.prepare('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = ?').run(cleanEmail);
+      const remaining = 5 - (otpRow.attempts + 1);
+      return res.status(400).json({ error: `Mã OTP không chính xác! Bạn còn ${remaining} lần thử.` });
     }
   }
 
-  otpStore.delete(cleanEmail);
+  // Clear OTP record after successful verification
+  db.prepare('DELETE FROM otp_codes WHERE email = ?').run(cleanEmail);
 
+  // Security: Admin role CANNOT be created via registration API
   const userRole = (role === 'SELLER') ? 'SELLER' : 'BUYER';
   const userCampus = campus || 'Hòa Lạc';
   const userCode = student_code || ('SV' + Math.floor(100000 + Math.random() * 900000));
   const avatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name.trim())}`;
+  const passwordHash = bcrypt.hashSync(password, 10);
 
   const result = db.prepare(`
-    INSERT INTO users (name, email, password, role, campus, student_code, rating_avg, review_count, eco_points, co2_saved_kg, avatar_url, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 5.0, 0, 100, 2.5, ?, datetime('now'))
-  `).run(name.trim(), cleanEmail, password, userRole, userCampus, userCode, avatar);
+    INSERT INTO users (name, email, password, role, campus, student_code, rating_avg, review_count, eco_points, co2_saved_kg, avatar_url, bonus_claimed, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 5.0, 0, 100, 2.5, ?, 1, datetime('now'))
+  `).run(name.trim(), cleanEmail, passwordHash, userRole, userCampus, userCode, avatar);
 
   const newUserId = result.lastInsertRowid;
 
@@ -209,14 +321,17 @@ app.post('/api/auth/register', (req, res) => {
 
   const wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(newUserId);
 
-  // Record voucher transaction
+  // Record welcome bonus voucher transaction in ledger
   const vCode = 'PT-BONUS-' + Math.floor(100000 + Math.random() * 900000);
   db.prepare(`
     INSERT INTO wallet_transactions (wallet_id, type, flow_type, voucher_code, payment_method, amount, balance_before, balance_after, reference_id, description, created_at)
     VALUES (?, 'BONUS', 'IN', ?, 'TakeTwo Welcome Gift', 100000, 0, 100000, 'NEW-USER', 'Quà tặng tân sinh viên: +100.000đ vào ví và 2 lượt đẩy tin VIP', datetime('now'))
   `).run(wallet.id, vCode);
 
-  const newUser = db.prepare('SELECT * FROM users WHERE id = ?').get(newUserId);
+  const newUser = db.prepare('SELECT id, name, email, role, campus, student_code, rating_avg, avatar_url, eco_points, co2_saved_kg FROM users WHERE id = ?').get(newUserId);
+
+  // Set secure HTTP-only JWT session cookie
+  setSessionCookie(res, newUser);
 
   res.json({
     success: true,
@@ -241,23 +356,46 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   if (login_type === 'otp') {
-    const storedOtp = otpStore.get(cleanEmail);
-    const isDemoFallback = String(otp_code).trim() === '123456';
-    if (!isDemoFallback) {
-      if (!storedOtp) {
+    const otpRow = db.prepare('SELECT * FROM otp_codes WHERE email = ?').get(cleanEmail);
+    const isUniversalDemo = DEMO_MODE && String(otp_code).trim() === '123456';
+
+    if (!isUniversalDemo) {
+      if (!otpRow) {
         return res.status(400).json({ error: 'Vui lòng bấm "Gửi mã OTP" về email trước!' });
       }
-      if (storedOtp.code !== String(otp_code).trim()) {
-        return res.status(400).json({ error: 'Mã xác thực OTP không đúng!' });
+      if (Date.now() > otpRow.expires_at) {
+        db.prepare('DELETE FROM otp_codes WHERE email = ?').run(cleanEmail);
+        return res.status(400).json({ error: 'Mã OTP đã hết hạn! Vui lòng yêu cầu mã mới.' });
       }
-      if (Date.now() > storedOtp.expiresAt) {
-        return res.status(400).json({ error: 'Mã OTP đã hết hạn!' });
+      if (otpRow.attempts >= 5) {
+        db.prepare('DELETE FROM otp_codes WHERE email = ?').run(cleanEmail);
+        return res.status(400).json({ error: 'Bạn đã nhập sai OTP quá 5 lần. Vui lòng yêu cầu mã mới!' });
+      }
+
+      const isMatch = bcrypt.compareSync(String(otp_code).trim(), otpRow.code_hash);
+      if (!isMatch) {
+        db.prepare('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = ?').run(cleanEmail);
+        const remaining = 5 - (otpRow.attempts + 1);
+        return res.status(400).json({ error: `Mã OTP không chính xác! Bạn còn ${remaining} lần thử.` });
       }
     }
-    otpStore.delete(cleanEmail);
+    db.prepare('DELETE FROM otp_codes WHERE email = ?').run(cleanEmail);
   } else {
-    // Password authentication
-    if (user.password && user.password !== password && password !== '123456') {
+    // Password authentication via bcrypt
+    if (!password) {
+      return res.status(400).json({ error: 'Vui lòng nhập mật khẩu đăng nhập!' });
+    }
+
+    const isDemoPassword = DEMO_MODE && password === '123456';
+    let isPasswordCorrect = false;
+
+    if (user.password && user.password.startsWith('$2')) {
+      isPasswordCorrect = bcrypt.compareSync(password, user.password);
+    } else if (user.password) {
+      isPasswordCorrect = (user.password === password);
+    }
+
+    if (!isPasswordCorrect && !isDemoPassword) {
       return res.status(400).json({ error: 'Mật khẩu không chính xác! Hãy kiểm tra lại hoặc đăng nhập bằng mã OTP.' });
     }
   }
@@ -268,23 +406,105 @@ app.post('/api/auth/login', (req, res) => {
     wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(user.id);
   }
 
+  // Issue session cookie
+  setSessionCookie(res, user);
+
+  const safeUser = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    campus: user.campus,
+    student_code: user.student_code,
+    rating_avg: user.rating_avg,
+    avatar_url: user.avatar_url,
+    eco_points: user.eco_points,
+    co2_saved_kg: user.co2_saved_kg
+  };
+
   res.json({
     success: true,
-    user,
+    user: safeUser,
     wallet,
     message: `Đăng nhập thành công! Chào mừng ${user.name} (${user.role})`
   });
 });
 
-// 4. Google SSO / Campus OAuth Simulation
+// 4. Logout API - Clears session cookie
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie('taketwo_token', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production'
+  });
+  res.json({ success: true, message: 'Đã đăng xuất thành công!' });
+});
+
+// 5. Demo Account Switcher (Strictly available ONLY in DEMO_MODE)
+app.post('/api/auth/demo-switch', (req, res) => {
+  if (!DEMO_MODE) {
+    return res.status(403).json({ error: 'Chức năng chuyển đổi tài khoản demo chỉ khả dụng khi DEMO_MODE=true!' });
+  }
+
+  const { user_id } = req.body;
+  if (user_id === 'guest' || user_id === '0' || !user_id) {
+    res.clearCookie('taketwo_token', { httpOnly: true, sameSite: 'lax' });
+    return res.json({ success: true, user: null, message: 'Đã chuyển sang chế độ Khách (Guest)' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(user_id);
+  if (!user) {
+    return res.status(404).json({ error: 'Không tìm thấy tài khoản người dùng demo!' });
+  }
+
+  setSessionCookie(res, user);
+  const wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(user.id);
+
+  const safeUser = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    campus: user.campus,
+    student_code: user.student_code,
+    rating_avg: user.rating_avg,
+    avatar_url: user.avatar_url,
+    eco_points: user.eco_points,
+    co2_saved_kg: user.co2_saved_kg
+  };
+
+  res.json({
+    success: true,
+    user: safeUser,
+    wallet: wallet || { available_balance: 0, escrow_balance: 0, boost_credits: 0 },
+    message: `[Demo] Đã chuyển sang tài khoản: ${user.name} (${user.role})`
+  });
+});
+
+// 6. Google SSO / Campus OAuth (Disabled in production or strictly blocked for ADMIN)
 app.post('/api/auth/google', (req, res) => {
+  if (!DEMO_MODE) {
+    return res.status(403).json({ 
+      error: 'Google SSO mô phỏng bị tắt ở môi trường Production. Cần tích hợp Google Identity Services với token verification ở server.' 
+    });
+  }
+
   const { email, name, avatar_url, campus, role } = req.body;
   if (!email || !email.includes('@')) {
     return res.status(400).json({ error: 'Email Google không hợp lệ!' });
   }
 
   const cleanEmail = email.trim().toLowerCase();
+
+  // SECURITY GUARD: Never allow logging in as ADMIN via Google SSO simulation
+  if (cleanEmail === 'admin@taketwo.vn') {
+    return res.status(403).json({ error: 'Bảo mật: Không được phép đăng nhập tài khoản Quản Trị Viên (Admin) bằng Google SSO mô phỏng!' });
+  }
+
   let user = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(cleanEmail);
+  if (user && user.role === 'ADMIN') {
+    return res.status(403).json({ error: 'Bảo mật: Không được phép đăng nhập tài khoản Quản Trị Viên (Admin) bằng Google SSO mô phỏng!' });
+  }
 
   if (!user) {
     const userName = name || cleanEmail.split('@')[0];
@@ -292,11 +512,12 @@ app.post('/api/auth/google', (req, res) => {
     const userCampus = campus || 'Hòa Lạc';
     const userCode = 'SSO' + Math.floor(100000 + Math.random() * 900000);
     const userAvatar = avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(userName)}`;
+    const randomHash = bcrypt.hashSync(Math.random().toString(), 10);
 
     const result = db.prepare(`
-      INSERT INTO users (name, email, password, role, campus, student_code, rating_avg, review_count, eco_points, co2_saved_kg, avatar_url, created_at)
-      VALUES (?, ?, 'google_sso_verified', ?, ?, ?, 5.0, 0, 100, 2.5, ?, datetime('now'))
-    `).run(userName, cleanEmail, userRole, userCampus, userCode, userAvatar);
+      INSERT INTO users (name, email, password, role, campus, student_code, rating_avg, review_count, eco_points, co2_saved_kg, avatar_url, bonus_claimed, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 5.0, 0, 100, 2.5, ?, 1, datetime('now'))
+    `).run(userName, cleanEmail, randomHash, userRole, userCampus, userCode, userAvatar);
 
     const newUserId = result.lastInsertRowid;
     db.prepare(`
@@ -315,23 +536,44 @@ app.post('/api/auth/google', (req, res) => {
   }
 
   const wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(user.id);
+  setSessionCookie(res, user);
+
+  const safeUser = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    campus: user.campus,
+    student_code: user.student_code,
+    rating_avg: user.rating_avg,
+    avatar_url: user.avatar_url,
+    eco_points: user.eco_points,
+    co2_saved_kg: user.co2_saved_kg
+  };
+
   res.json({
     success: true,
-    user,
+    user: safeUser,
     wallet,
     message: `Đăng nhập Google SSO thành công! Chào mừng ${user.name}`
   });
 });
 
-// 5. Upgrade / Switch User Role (Buyer -> Seller)
-app.post('/api/users/upgrade-role', (req, res) => {
-  if (!req.currentUser) {
-    return res.status(401).json({ error: 'Vui lòng đăng nhập trước!' });
-  }
+// 7. Upgrade / Switch User Role (Buyer <-> Seller ONLY for own account)
+app.post('/api/users/upgrade-role', requireAuth, (req, res) => {
   const { role } = req.body;
+  // Security: only allow toggling BUYER <-> SELLER, NEVER escalate to ADMIN
   const targetRole = (role === 'SELLER') ? 'SELLER' : 'BUYER';
+  
+  if (req.currentUser.role === 'ADMIN') {
+    return res.status(400).json({ error: 'Tài khoản Quản trị viên (ADMIN) không chuyển đổi vai trò qua API này!' });
+  }
+
   db.prepare("UPDATE users SET role = ? WHERE id = ?").run(targetRole, req.currentUser.id);
-  const updatedUser = db.prepare('SELECT * FROM users WHERE id = ?').get(req.currentUser.id);
+  const updatedUser = db.prepare('SELECT id, name, email, role, campus, student_code, rating_avg, avatar_url, eco_points, co2_saved_kg FROM users WHERE id = ?').get(req.currentUser.id);
+
+  // Update session cookie with new role
+  setSessionCookie(res, updatedUser);
 
   res.json({
     success: true,
@@ -340,11 +582,8 @@ app.post('/api/users/upgrade-role', (req, res) => {
   });
 });
 
-// 6. Delete / Take Down Product Listing (Admin or Seller of item)
-app.post('/api/products/:id/delete', (req, res) => {
-  if (!req.currentUser) {
-    return res.status(401).json({ error: 'Vui lòng đăng nhập trước!' });
-  }
+// 8. Delete / Take Down Product Listing (Admin or Seller of item)
+app.post('/api/products/:id/delete', requireAuth, (req, res) => {
   const prod = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
   if (!prod) return res.status(404).json({ error: 'Không tìm thấy sản phẩm' });
 
@@ -433,10 +672,7 @@ app.get('/api/products/:id', (req, res) => {
   res.json(product);
 });
 
-app.post('/api/products', (req, res) => {
-  if (!req.currentUser) {
-    return res.status(401).json({ error: 'Vui lòng đăng nhập tài khoản sinh viên trước khi đăng bán!' });
-  }
+app.post('/api/products', requireAuth, (req, res) => {
   const { title, category_id, price, original_price, condition_level, defect_note, campus_cluster, meetup_location, image_url } = req.body;
   if (!title || !category_id || !price || !condition_level || !campus_cluster || !meetup_location) {
     return res.status(400).json({ error: 'Vui lòng điền đầy đủ các thông tin bắt buộc' });
@@ -473,15 +709,17 @@ app.get('/api/bump-packages', (req, res) => {
   res.json(packages);
 });
 
-app.post('/api/products/:id/bump', (req, res) => {
+app.post('/api/products/:id/bump', requireAuth, (req, res) => {
   const productId = req.params.id;
   const { package_id } = req.body;
 
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
   if (!product) return res.status(404).json({ error: 'Không tìm thấy sản phẩm' });
 
-  // In presentation / demo mode, allow users to boost their own items or promote items for testing
-  // (Deduction is made strictly from req.currentUser's wallet/boost_credits)
+  // Ownership verification: Only owner of product (or Admin) can bump
+  if (req.currentUser.role !== 'ADMIN' && req.currentUser.id !== product.seller_id) {
+    return res.status(403).json({ error: 'Chỉ chủ sở hữu sản phẩm mới có quyền đẩy bài này!' });
+  }
 
   let wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(req.currentUser.id);
   if (!wallet) {
@@ -574,8 +812,8 @@ app.post('/api/products/:id/bump', (req, res) => {
   });
 });
 
-// Mua gói đẩy bài trực tiếp
-app.post('/api/bump-packages/buy', (req, res) => {
+// Mua gói đẩy bài trực tiếp (chỉ trừ tiền ví & cộng boost_credits, không thay đổi role của user)
+app.post('/api/bump-packages/buy', requireAuth, (req, res) => {
   const { package_id } = req.body;
   const pkg = db.prepare('SELECT * FROM bump_packages WHERE id = ?').get(package_id);
   if (!pkg) return res.status(404).json({ error: 'Gói đẩy tin không hợp lệ' });
@@ -620,7 +858,7 @@ app.post('/api/bump-packages/buy', (req, res) => {
 // -------------------------------------------------------------
 // WALLET & FINTAB THU CHI (TRANSACTIONS / DEPOSIT) APIS
 // -------------------------------------------------------------
-app.get('/api/wallet', (req, res) => {
+app.get('/api/wallet', requireAuth, (req, res) => {
   let wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(req.currentUser.id);
   if (!wallet) {
     db.prepare("INSERT INTO wallets (user_id, available_balance, escrow_balance, updated_at) VALUES (?, 0, 0, datetime('now'))")
@@ -639,11 +877,11 @@ app.get('/api/wallet', (req, res) => {
 
 // Dedicated Fintab Thu Chi (Deposit / Transactions) Endpoint
 function handleTransactionsLedger(req, res) {
-  console.log('>>> [SERVER] Incoming request to transactions/ledger:', req.query);
   try {
-    const user = req.currentUser || db.prepare('SELECT * FROM users LIMIT 1').get() || { id: 1, role: 'BUYER' };
+    const user = req.currentUser;
     const { tab, search, view_all } = req.query;
-    const isGlobalView = view_all === 'true' || user.role === 'ADMIN';
+    // Security: Only ADMIN can view global transactions
+    const isGlobalView = view_all === 'true' && user.role === 'ADMIN';
 
     let wallet = db.prepare('SELECT * FROM wallets WHERE user_id = ?').get(user.id);
     if (!wallet) {
@@ -708,10 +946,10 @@ function handleTransactionsLedger(req, res) {
   }
 }
 
-app.get('/api/transactions', handleTransactionsLedger);
-app.get('/api/ledger', handleTransactionsLedger);
+app.get('/api/transactions', requireAuth, handleTransactionsLedger);
+app.get('/api/ledger', requireAuth, handleTransactionsLedger);
 
-app.post('/api/wallet/topup', (req, res) => {
+app.post('/api/wallet/topup', requireAuth, (req, res) => {
   const { amount, bank_name } = req.body;
   const numAmount = parseInt(amount, 10);
   if (!numAmount || numAmount < 10000) {
@@ -753,7 +991,7 @@ app.post('/api/wallet/topup', (req, res) => {
   });
 });
 
-app.post('/api/wallet/withdraw', (req, res) => {
+app.post('/api/wallet/withdraw', requireAuth, (req, res) => {
   const { amount, bank_account, bank_name } = req.body;
   const numAmount = parseInt(amount, 10);
   if (!numAmount || numAmount < 20000) {
@@ -886,10 +1124,10 @@ const handleOrderCheckout = (req, res) => {
   });
 };
 
-app.post('/api/orders/checkout', handleOrderCheckout);
-app.post('/api/orders', handleOrderCheckout);
+app.post('/api/orders/checkout', requireAuth, handleOrderCheckout);
+app.post('/api/orders', requireAuth, handleOrderCheckout);
 
-app.get('/api/orders', (req, res) => {
+app.get('/api/orders', requireAuth, (req, res) => {
   checkAutoConfirmations();
   const { role } = req.query; // 'buyer', 'seller', or 'admin'
 
@@ -923,7 +1161,7 @@ app.get('/api/orders', (req, res) => {
 });
 
 // Seller accepts order
-app.post('/api/orders/:id/accept', (req, res) => {
+app.post('/api/orders/:id/accept', requireAuth, (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
   if (order.seller_id !== req.currentUser.id && req.currentUser.role !== 'ADMIN') {
@@ -937,7 +1175,7 @@ app.post('/api/orders/:id/accept', (req, res) => {
 });
 
 // Seller ships order -> Triggers 5-day auto-confirm deadline
-app.post('/api/orders/:id/ship', (req, res) => {
+app.post('/api/orders/:id/ship', requireAuth, (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
   if (order.seller_id !== req.currentUser.id && req.currentUser.role !== 'ADMIN') {
@@ -951,10 +1189,10 @@ app.post('/api/orders/:id/ship', (req, res) => {
   db.prepare(`
     UPDATE orders 
     SET status = 'DELIVERING', 
-        shipped_at = ?, 
-        auto_confirm_deadline = ?,
-        tracking_code = COALESCE(?, tracking_code),
-        updated_at = ?
+         shipped_at = ?, 
+         auto_confirm_deadline = ?,
+         tracking_code = COALESCE(?, tracking_code),
+         updated_at = ?
     WHERE id = ?
   `).run(now.toISOString(), deadline.toISOString(), tracking_code || null, now.toISOString(), order.id);
 
@@ -965,7 +1203,7 @@ app.post('/api/orders/:id/ship', (req, res) => {
 });
 
 // Buyer confirms receipt & releases escrow funds to seller
-app.post('/api/orders/:id/confirm', (req, res) => {
+app.post('/api/orders/:id/confirm', requireAuth, (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
   if (order.buyer_id !== req.currentUser.id && req.currentUser.role !== 'ADMIN') {
@@ -977,7 +1215,7 @@ app.post('/api/orders/:id/confirm', (req, res) => {
 });
 
 // Nút Demo Giảng viên: "⚡ Demo: Qua 5 ngày (Auto-confirm)"
-app.post('/api/orders/:id/simulate-5days', (req, res) => {
+app.post('/api/orders/:id/simulate-5days', requireAuth, (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
   if (order.status === 'COMPLETED' || order.status === 'COMPLETED_AUTO') {
@@ -994,9 +1232,14 @@ app.post('/api/orders/:id/simulate-5days', (req, res) => {
 });
 
 // Buyer reports dispute
-app.post('/api/orders/:id/dispute', (req, res) => {
+app.post('/api/orders/:id/dispute', requireAuth, (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
+
+  // Security check: Only the buyer of the order (or Admin) can dispute
+  if (order.buyer_id !== req.currentUser.id && req.currentUser.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Chỉ người mua đơn hàng này mới có quyền gửi khiếu nại!' });
+  }
 
   const { reason } = req.body;
   db.prepare(`
@@ -1015,11 +1258,7 @@ app.post('/api/orders/:id/dispute', (req, res) => {
 });
 
 // Admin resolves dispute (Refund Buyer OR Release Seller)
-app.post('/api/orders/:id/admin-resolve', (req, res) => {
-  if (req.currentUser.role !== 'ADMIN') {
-    return res.status(403).json({ error: 'Chỉ Admin mới có quyền giải quyết tranh chấp' });
-  }
-
+app.post('/api/orders/:id/admin-resolve', requireAdmin, (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Không tìm thấy đơn hàng' });
 
@@ -1059,9 +1298,9 @@ app.post('/api/orders/:id/admin-resolve', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// ADMIN METRICS (5 Key Metrics)
+// ADMIN METRICS (5 Key Metrics - Admin Only)
 // -------------------------------------------------------------
-app.get('/api/admin/metrics', (req, res) => {
+app.get('/api/admin/metrics', requireAdmin, (req, res) => {
   const verifiedTx = db.prepare("SELECT COUNT(*) as count, COALESCE(SUM(amount), 0) as gmv FROM orders WHERE status IN ('COMPLETED', 'COMPLETED_AUTO')").get();
   const activeListings = db.prepare("SELECT COUNT(*) as count FROM products WHERE status = 'AVAILABLE'").get();
   const totalSellers = db.prepare('SELECT COUNT(DISTINCT seller_id) as count FROM products').get();
