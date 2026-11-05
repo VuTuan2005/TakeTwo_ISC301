@@ -13,8 +13,12 @@ node_modules/
 *.log
 npm-debug.log*
 scratch/
+backups/
 
 # OS Files
 .DS_Store
 Thumbs.db
 
+
+# Private uploaded evidence
+uploads/

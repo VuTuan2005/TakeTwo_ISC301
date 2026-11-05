@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "test": "node --test test/*.test.js",
+    "demo:reset": "node scripts/reset-demo.js",
+    "db:check": "node scripts/check-db.js"
   },
   "keywords": [],
   "author": "",

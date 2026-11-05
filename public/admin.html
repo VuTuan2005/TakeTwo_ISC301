@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TakeTwo — Cổng Quản Trị Hệ Thống & Đối Soát</title>
+  <link rel="stylesheet" href="css/admin.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+</head>
+<body>
+  <div class="admin-shell">
+    <!-- Sidebar -->
+    <aside class="admin-sidebar">
+      <div class="admin-brand">
+        <div class="brand-badge">T2</div>
+        <div class="brand-info">
+          <h2>TakeTwo</h2>
+          <small>Admin Portal</small>
+        </div>
+      </div>
+      <nav class="admin-nav">
+        <a href="#kpi" class="nav-link active" onclick="switchView('kpi'); return false;">
+          <span>📊</span> Tổng quan KPI
+        </a>
+        <a href="#orders" class="nav-link" onclick="switchView('orders'); return false;">
+          <span>📋</span> Đơn hàng & Đối soát
+        </a>
+        <a href="#shipping" class="nav-link" onclick="switchView('shipping'); return false;">
+          <span>🚚</span> Vận chuyển & Cước
+          <span id="badgeShipping" class="badge">0</span>
+        </a>
+        <a href="#escrow" class="nav-link" onclick="switchView('escrow'); return false;">
+          <span>🔒</span> Quản lý Escrow
+          <span id="badgeEscrow" class="badge">0</span>
+        </a>
+        <a href="#disputes" class="nav-link" onclick="switchView('disputes'); return false;">
+          <span>⚖️</span> Hồ sơ Khiếu nại
+          <span id="badgeDisputes" class="badge">0</span>
+        </a>
+        <a href="#users" class="nav-link" onclick="switchView('users'); return false;">
+          <span>👥</span> Người dùng & Duyệt bài
+        </a>
+        <a href="#vouchers" class="nav-link" onclick="switchView('vouchers'); return false;">
+          <span>🎫</span> Chiến dịch Voucher
+        </a>
+      </nav>
+      <div class="admin-sidebar-footer">
+        <div><strong>Ban Quản Trị TakeTwo</strong></div>
+        <div>Hệ thống vận hành độc lập</div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="admin-main">
+      <header class="admin-topbar">
+        <div class="topbar-title">
+          <h1 id="pageTitle">Tổng Quan Kinh Doanh & Vận Hành</h1>
+        </div>
+        <div class="topbar-actions">
+          <a href="/" class="btn btn-outline btn-sm">🏪 Về Sàn Người Dùng</a>
+          <button class="btn btn-danger btn-sm" onclick="adminLogout()">Đăng xuất</button>
+        </div>
+      </header>
+
+      <main class="admin-content">
+        <!-- VIEW 1: KPI OVERVIEW -->
+        <div id="adminError" class="notice" role="alert" hidden></div><div class="filter-bar" style="padding:0 0 16px"><label>Từ ngày <input type="date" id="period-from"></label><label>Đến ngày <input type="date" id="period-to"></label><button class="btn btn-outline" onclick="refreshAdminPeriod()">Áp dụng thời gian</button><small>Mặc định 30 ngày; tỷ lệ theo ngày tạo đơn, doanh thu theo ngày quyết toán. Escrow là số đang giữ.</small></div>
+        <section id="sec-kpi"><p id="kpiCounts"></p>
+          <div class="kpi-grid">
+            <div class="kpi-card highlight">
+              <div class="kpi-label">Đóng Góp Ròng Của Sàn</div>
+              <div class="kpi-value" id="kpiNetContribution">0 đ</div>
+              <div class="kpi-sub">Phí sàn + Phí giữ hoàn + Boost − Voucher − Cước bù</div>
+            </div>
+            <div class="kpi-card success">
+              <div class="kpi-label">GMV Hàng Hóa Hoàn Tất</div>
+              <div class="kpi-value" id="kpiGmv">0 đ</div>
+              <div class="kpi-sub">Không bao gồm cước vận chuyển</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Tiền Escrow Đang Giữ</div>
+              <div class="kpi-value" id="kpiEscrowHolding">0 đ</div>
+              <div class="kpi-sub">Đang bảo vệ các giao dịch chờ giao/xác nhận</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Đơn Hoàn Tất / Tổng Đơn</div>
+              <div class="kpi-value" id="kpiCompletedRate">0%</div>
+              <div class="kpi-sub" id="kpiCompletedOrders">0 đơn hoàn tất</div>
+            </div>
+            <div class="kpi-card warning">
+              <div class="kpi-label">Tỷ Lệ Khiếu Nại Tranh Chấp</div>
+              <div class="kpi-value" id="kpiDisputeRate">0%</div>
+              <div class="kpi-sub" id="kpiDisputedOrders">0 vụ tranh chấp</div>
+            </div>
+          </div>
+
+          <!-- Revenue Breakdown Table -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Bảng Phân Bổ Doanh Thu & Chi Phí Mô Phỏng</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadKpiData()">Làm mới</button>
+            </div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Hạng mục tài chính</th>
+                    <th>Ý nghĩa kế toán</th>
+                    <th class="num">Số tiền (VNĐ)</th>
+                  </tr>
+                </thead>
+                <tbody id="tblFinancialBreakdown">
+                  <!-- Rendered dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 2: ORDERS & RECONCILIATION -->
+        <section id="sec-orders" hidden>
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Sổ Đối Soát Dòng Tiền Từng Đơn Hàng</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadOrdersReconciliation()">Làm mới</button>
+            </div>
+            <div class="filter-bar">
+              <input type="text" id="orderSearchInput" placeholder="Tìm mã đơn, tên người mua, người bán..." oninput="filterOrdersTable()">
+              <select id="orderDeliveryFilter" onchange="filterOrdersTable()"><option value="all">Mọi cách nhận</option><option value="CAMPUS_MEETUP">Gặp trực tiếp</option><option value="COURIER_ROOM">Giao nội khu</option><option value="COURIER_EXPRESS">Giao nhanh</option></select><label><input type="checkbox" id="orderLossFilter" onchange="filterOrdersTable()"> Đơn lỗ</label><input id="orderVoucherFilter" placeholder="Mã voucher" oninput="filterOrdersTable()">
+              <select id="orderDateBasis" onchange="loadOrdersReconciliation()"><option value="created">Lọc theo ngày tạo</option><option value="settled">Lọc theo ngày quyết toán</option></select>
+              <select id="orderStatusFilter" onchange="filterOrdersTable()">
+                <option value="all">Mọi trạng thái đơn</option>
+                <option value="REQUESTED">Chờ nhận (REQUESTED)</option>
+                <option value="ACCEPTED">Đã nhận (ACCEPTED)</option>
+                <option value="DELIVERING">Đang giao (DELIVERING)</option>
+                <option value="COMPLETED">Hoàn tất (COMPLETED)</option>
+                <option value="COMPLETED_AUTO">Tự hoàn tất (COMPLETED_AUTO)</option>
+                <option value="DISPUTED">Tranh chấp (DISPUTED)</option>
+                <option value="CANCELLED">Hủy / Hoàn (CANCELLED)</option>
+              </select>
+              <select id="orderEscrowFilter" onchange="filterOrdersTable()">
+                <option value="all">Mọi trạng thái Escrow</option>
+                <option value="HELD">Đang tạm giữ (HELD)</option>
+                <option value="RELEASED">Đã giải ngân (RELEASED)</option>
+                <option value="REFUNDED">Đã hoàn tiền (REFUNDED)</option>
+              </select>
+            </div>
+
+            <div class="table-responsive">
+              <table class="admin-table" id="tblRecon">
+                <thead>
+                  <tr>
+                    <th>Mã Đơn / Ngày</th>
+                    <th>Người Mua</th>
+                    <th>Người Bán</th>
+                    <th class="num">Tiền Hàng (P)</th>
+                    <th class="num">Ship (S)</th>
+                    <th class="num">Voucher (D)</th>
+                    <th class="num">Buyer Trả (C)</th>
+                    <th class="num">Phí Sàn (F/Fr)</th>
+                    <th class="num">Seller Nhận</th>
+                    <th class="num">Buyer Hoàn</th>
+                    <th class="num">Cước Trả ĐVVC</th>
+                    <th class="num">Sàn Ròng</th>
+                    <th>Trạng Thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="tblReconBody"></tbody>
+                <tfoot id="tblReconFoot"></tfoot>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 3: SHIPPING & LOGISTICS -->
+        <section id="sec-shipping" hidden>
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Hàng Đợi Vận Chuyển & Quản Lý Cước Phải Trả</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadShippingData()">Làm mới</button>
+            </div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Mã Vận Đơn</th>
+                    <th>Đơn Hàng</th>
+                    <th>Địa Chỉ Lấy (Seller)</th>
+                    <th>Địa Chỉ Giao (Buyer)</th>
+                    <th class="num">Cước Thu Buyer</th>
+                    <th class="num">Cước Phải Trả ĐVVC</th>
+                    <th>Trạng Thái Giao Hàng</th>
+                    <th>Thanh Toán Cước</th>
+                    <th>Cập nhật trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody id="tblShippingBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 4: ESCROW AUDIT -->
+        <section id="sec-escrow" hidden>
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Đối Soát Số Dư Két Escrow Toàn Hệ Thống</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadEscrowAudit()">Kiểm tra đối chiếu</button>
+            </div>
+            <div id="escrowIntegrityNotice" style="margin-bottom: 16px;"></div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Mã Đơn</th>
+                    <th>Sản Phẩm</th>
+                    <th>Người Mua</th>
+                    <th>Người Bán</th>
+                    <th class="num">Tiền Đang Tạm Giữ</th>
+                    <th>Thời Hạn Tự Động (120h)</th>
+                    <th>Tình Trạng Két</th>
+                  </tr>
+                </thead>
+                <tbody id="tblEscrowAuditBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 5: DISPUTES -->
+        <section id="sec-disputes" hidden>
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Hồ Sơ Khiếu Nại & Tranh Chấp Cần Thẩm Định</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadDisputesData()">Làm mới</button>
+            </div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Hồ sơ / Mã Đơn</th>
+                    <th>Lý Do Khiếu Nại</th>
+                    <th>Người Khiếu Nại</th>
+                    <th>Người Bán</th>
+                    <th class="num">Tiền Tạm Giữ</th>
+                    <th>Trạng thái</th>
+                    <th>Hành động</th>
+                  </tr>
+                </thead>
+                <tbody id="tblDisputesBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 6: USERS & MODERATION -->
+        <section id="sec-users" hidden>
+          <!-- User Management -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Danh Sách Tài Khoản Người Dùng</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadUsersData()">Làm mới</button>
+            </div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Tên & Email</th>
+                    <th>Vai trò</th>
+                    <th>Cụm trường</th>
+                    <th>Trạng thái</th>
+                    <th>Cảnh cáo</th>
+                    <th class="num">Ví khả dụng</th>
+                    <th class="num">Tạm giữ</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="tblUsersBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Product Moderation -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Kiểm Duyệt Bài Đăng Sản Phẩm</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadProductsModeration()">Làm mới</button>
+            </div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Ảnh & Tiêu đề</th>
+                    <th>Người Bán</th>
+                    <th>Danh mục</th>
+                    <th class="num">Giá niêm yết</th>
+                    <th>Kiểm duyệt</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="tblProductsModBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Reports -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Báo Cáo Vi Phạm Từ Người Dùng</h3>
+            </div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Sản phẩm bị báo cáo</th>
+                    <th>Người báo cáo</th>
+                    <th>Lý do vi phạm</th>
+                    <th>Mô tả</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="tblReportsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 7: VOUCHERS -->
+        <section id="sec-vouchers" hidden>
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Chiến Dịch Voucher Khuyến Mại & Trợ Giá</h3>
+              <button class="btn btn-primary btn-sm" onclick="openNewVoucherModal()">+ Tạo chiến dịch mới</button>
+            </div>
+            <div class="table-responsive">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Mã Code</th>
+                    <th>Tên Chiến Dịch</th>
+                    <th>Mức Giảm</th>
+                    <th class="num">Đơn Tối Thiểu</th>
+                    <th class="num">Tổng Ngân Sách</th>
+                    <th class="num">Đã Dùng</th>
+                    <th class="num">Đang Giữ</th>
+                    <th class="num">Còn Lại</th>
+                    <th>Trạng thái</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="tblVouchersBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ================= MODALS ================= -->
+
+  <!-- Modal: Dispute Dossier Review -->
+  <div id="modalDisputeDossier" class="modal-overlay" hidden>
+    <div class="modal-card" style="max-width: 760px;">
+      <div class="modal-header">
+        <h3 id="disputeModalTitle">Hồ Sơ Khiếu Nại Tranh Chấp</h3>
+        <button class="btn btn-outline btn-sm" onclick="closeModal('modalDisputeDossier')">&times;</button>
+      </div>
+      <div class="modal-body" id="disputeModalBody">
+        <!-- Rendered dynamically with evidence gallery, seller response, chat, financial preview -->
+      </div>
+      <div class="modal-footer" id="disputeModalFooter">
+        <button class="btn btn-outline" onclick="closeModal('modalDisputeDossier')">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: New Voucher -->
+  <div id="modalNewVoucher" class="modal-overlay" hidden>
+    <div class="modal-card" style="max-width: 520px;">
+      <div class="modal-header">
+        <h3>Tạo Chiến Dịch Voucher Mới</h3>
+        <button class="btn btn-outline btn-sm" onclick="closeModal('modalNewVoucher')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div>
+            <label style="font-weight:600; font-size:12px;">Mã Code (*):</label>
+            <label>Đối tượng<select id="vAudience"><option value="ALL">Tất cả</option><option value="NEW_BUYER">Chưa có đơn hoàn tất</option><option value="CAMPUS_HOALAC">Sinh viên Hòa Lạc</option><option value="SPECIFIC_USERS">Danh sách ID</option></select></label><label>ID tài khoản (cách nhau dấu phẩy)<input id="vTargets"></label><label>Từ thời điểm<input id="vStart" type="datetime-local"></label><label>Đến thời điểm<input id="vEnd" type="datetime-local"></label><label>Lượt mỗi người<input id="vPerUser" type="number" min="1" value="1"></label>
+            <input type="text" id="vCode" placeholder="VD: SV20K" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; text-transform:uppercase;">
+          </div>
+          <div>
+            <label style="font-weight:600; font-size:12px;">Tên Chiến Dịch (*):</label>
+            <input type="text" id="vTitle" placeholder="VD: Giảm 20k cho sinh viên Hòa Lạc" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+            <div>
+              <label style="font-weight:600; font-size:12px;">Loại giảm giá:</label>
+              <select id="vType" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+                <option value="FIXED">Số tiền cố định (đ)</option>
+                <option value="PERCENTAGE">Phần trăm (%)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-weight:600; font-size:12px;">Mức giảm (*):</label>
+              <input type="number" id="vValue" placeholder="VD: 20000 hoặc 10" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+            <div>
+              <label style="font-weight:600; font-size:12px;">Giảm tối đa (nếu %):</label>
+              <input type="number" id="vMaxDiscount" placeholder="VD: 50000" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+            </div>
+            <div>
+              <label style="font-weight:600; font-size:12px;">Đơn tối thiểu (đ):</label>
+              <input type="number" id="vMinSpend" placeholder="VD: 100000" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+            <div>
+              <label style="font-weight:600; font-size:12px;">Tổng ngân sách (đ) (*):</label>
+              <input type="number" id="vBudget" placeholder="VD: 2000000" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+            </div>
+            <div>
+              <label style="font-weight:600; font-size:12px;">Giới hạn lượt dùng:</label>
+              <input type="number" id="vUsageLimit" placeholder="VD: 100" value="100" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modalNewVoucher')">Hủy</button>
+        <button class="btn btn-primary" onclick="submitCreateVoucher()">Lưu chiến dịch</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/admin.js"></script>
+</body>
+</html>
+

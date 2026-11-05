@@ -1,113 +1,104 @@
-# 🚀 TAKETWO MARKETPLACE (PHIÊN BẢN NÂNG CẤP V2.0)
-### Sàn C2C Đồ Cũ Sinh Viên Hà Nội — Tích Hợp Ví Điện Tử Nội Bộ, Két Escrow 5 Ngày & Giao Diện Pancake Fintab
+﻿# TakeTwo — Marketplace đồ cũ sinh viên Hà Nội
 
-- 🌐 **Vercel Production URL:** [https://take-two-isc-301.vercel.app](https://take-two-isc-301.vercel.app)
-- ⚙️ **Vercel Project Dashboard:** [https://vercel.com/vutuan2005/take-two-isc-301](https://vercel.com/vutuan2005/take-two-isc-301)
-- 🐙 **GitHub Repository:** [https://github.com/VuTuan2005/TakeTwo_ISC301](https://github.com/VuTuan2005/TakeTwo_ISC301) (Branch `main` tự động trigger CI/CD Deploy lên Vercel)
+Ứng dụng local dùng Express, JavaScript thuần và SQLite. Đăng tin, duyệt tin, chat, đặt hàng, Escrow, tranh chấp và đối soát lưu dữ liệu thật trong database. **Tiền, OTP, Google và vận chuyển vẫn mô phỏng**, không giao dịch với ngân hàng hoặc hãng vận chuyển.
 
-Dự án đã được xây dựng hoàn chỉnh toàn bộ Full-stack (Database SQLite có sẵn dữ liệu mẫu, Backend REST APIs, và Giao diện Frontend phong cách Pancake Fintab).
+## Chạy
 
----
+Node.js 22.x theo package.json; đã kiểm tra với Node.js 24.18.0 trên Windows.
 
-## ⚡ HƯỚNG DẪN KHỞI CHẠY NHANH (QUICK START)
-
-1. Mở cửa sổ dòng lệnh (Terminal/PowerShell) tại thư mục dự án:
-   ```bash
-   cd e:\Fall2026\ISC301\Project
-   ```
-2. Khởi chạy máy chủ:
-   ```bash
-   npm start
-   ```
-   *(Hoặc `node server.js`)*
-3. Mở trình duyệt web và truy cập:
-   ```
-   http://localhost:3000
-   ```
-
----
-
-## 🌟 CÁC TÍNH NĂNG ĐÃ ĐƯỢC XÂY DỰNG & HƯỚNG DẪN DÙNG THỬ
-
-### 1. Cơ Chế Đổi Tài Khoản Nhanh (Account Switcher)
-Góc trên bên phải Header có menu chọn vai trò, cho phép bạn trải nghiệm đầy đủ các luồng:
-* **👤 Vũ Hán Tuấn (Khách mua - MSSV: HE194875 - FPT Hòa Lạc):** Đang có sẵn 250.000đ trong ví, dùng để trải nghiệm luồng Đặt mua Escrow và quản lý đơn hàng.
-* **🏪 Nguyễn Minh Anh (Chủ Gian Hàng - MSSV: SE182210):** Đang có sẵn 480.000đ trong ví và nhiều món đồ đăng bán, dùng để trải nghiệm tính năng Đẩy tin 1-Click và duyệt đơn/giao hàng.
-* **🛡️ Ban Quản Trị (Admin TakeTwo):** Xem Dashboard 5 chỉ số KPI, Sổ quỹ tiền mặt 30,25 triệu, và phán quyết trọng tài giải quyết khiếu nại.
-
----
-
-### 2. Trải Nghiệm Đẩy Bài 1-Click Qua Ví (Xóa Bỏ Ma Sát Chuyển Khoản 15k)
-* **Vấn đề cũ:** Mỗi lần đăng/đẩy bài lại phải quét mã ngân hàng 15.000đ gây nản lòng.
-* **Cách thử nghiệm:**
-  1. Chọn tài khoản **Nguyễn Minh Anh (Chủ gian hàng)** tại góc phải.
-  2. Bấm vào nút màu vàng **"🚀 Đẩy Tin 1-Click"** trên một món đồ của Minh Anh (ví dụ: Nồi cơm điện mini Lock&Lock).
-  3. Popup hiển thị các gói combo định giá chim mồi:
-     * *Gói Lẻ (1 lượt): 15.000đ*
-     * *Gói Sinh Viên Nhanh (3 lượt): 35.000đ*
-     * *Gói Dọn Trọ Gấp (5 lượt + Badge HOT - Best Value): 49.000đ*
-     * *Gói KTX Pro (15 lượt + Auto-Bump): 119.000đ*
-  4. Bấm **"Đẩy Bằng Gói Này"** $\rightarrow$ Hệ thống lập tức trừ tiền từ số dư ví trong 0,5 giây, bài viết được đưa ngay lên **Top 1 Danh Mục** mà không cần mở app ngân hàng!
-
----
-
-### 3. Trải Nghiệm Đặt Mua & Khóa Tiền Tạm Giữ (Escrow Checkout & Shipping)
-* **Cách thử nghiệm:**
-  1. Chọn tài khoản **Vũ Hán Tuấn (Khách mua)**.
-  2. Chọn một món đồ đang có trạng thái **"Đang bán"** và bấm nút màu xanh **"⚡ Đặt Mua (Escrow)"**.
-  3. Màn hình Checkout xuất hiện với đầy đủ lựa chọn:
-     * *Hình thức nhận hàng:* Hẹn gặp tại Campus (Miễn phí 0đ) hoặc Giao bưu tá phòng KTX (+15.000đ).
-     * *Mã Voucher sinh viên:* Tự động giảm -5.000đ.
-     * *Cam kết Escrow Shield:* Tiền được khóa trong két TakeTwo, người bán chưa nhận được tiền.
-  4. Bấm **"🔒 Xác Nhận & Giữ Chỗ Tiền"** $\rightarrow$ Tiền khả dụng của Tuấn bị trừ và chuyển vào Ngăn **Số Dư Tạm Giữ (Escrow Balance)**; Sản phẩm tự động khóa sang trạng thái **"Đang giữ chỗ 🔒"**.
-
----
-
-### 4. Đồng Hồ Bảo Vệ 5 Ngày (120h) & Tự Động Xác Nhận (Auto-Confirmation SLA)
-* Bấm vào Tab **"📦 Đơn Hàng & Vận Chuyển"**:
-* Bạn sẽ thấy đơn hàng mẫu `#TK-20261102-01` (Giáo trình Triết học Mác - Lênin) đang có **Đồng hồ đếm ngược trực tiếp theo thời gian thực (Live Countdown Timer)**: `⏳ Còn 3d 23h 58m 12s`.
-* **Thử nghiệm 3 kịch bản:**
-  * *Kịch bản 1 (Hài lòng):* Tuấn bấm **"Đã Nhận & Hài Lòng"** $\rightarrow$ Hệ thống tự động giải phóng tiền tạm giữ sang ví Minh Anh (tự động khấu trừ 3% hoa hồng sàn), cập nhật món đồ sang "Đã bán ✅", và cộng điểm Sống Xanh (Eco Points) cho Tuấn.
-  * *Kịch bản 2 (Hết 120h):* Nếu người mua không có hành động gì trong 5 ngày, hệ thống sẽ tự động kích hoạt tiến trình Auto-Confirm và giải ngân tiền cho Người bán để bảo vệ Người bán.
-  * *Kịch bản 3 (Khiếu nại):* Bấm nút đỏ **"Khiếu Nại"** $\rightarrow$ Nhập lý do (ví dụ: "Sách bị rách gáy") $\rightarrow$ Đồng hồ 5 ngày **LẬP TỨC ĐÓNG BĂNG**, đơn chuyển sang trạng thái "⚠️ Đang Tranh Chấp".
-
----
-
-### 5. Quản Lý Ví Điện Tử & Nạp/Rút Tiền VietQR
-* Bấm vào Tab **"💳 Ví Điện Tử & Sổ Cái Giao Dịch"**:
-* Xem 2 ngăn số dư độc lập: **Số Dư Khả Dụng** và **Số Dư Tạm Giữ Escrow**.
-* **Thử Nạp Tiền:** Bấm nút **"+ Nạp Tiền VietQR"** $\rightarrow$ Chọn mệnh giá (50k, 100k, 200k, 500k) $\rightarrow$ Xem mã VietQR động được tạo $\rightarrow$ Bấm nút **"⚡ [Mô Phỏng] Quét Mã Chuyển Khoản Thành Công"** để tiền lập tức nhảy vào ví!
-* **Thử Rút Tiền:** Bấm nút **"⤓ Rút Tiền Về STK"** $\rightarrow$ Nhập số tài khoản thẻ sinh viên để rút tiền về.
-* Xem bảng **Sổ Cái Biến Động Số Dư (Transaction Ledger)** lưu vết chi tiết từng đồng tiền vào/ra minh bạch.
-
----
-
-### 6. Cổng Quản Trị Hệ Thống & Trọng Tài Escrow (Admin Dashboard)
-* Chọn tài khoản **🛡️ Ban Quản Trị TakeTwo** và bấm Tab **"📊 Báo Cáo 5 KPIs & Quản Trị"**:
-* Xem trực tiếp 5 chỉ số đo lường sống còn:
-  1. *North Star Metric:* Giao dịch xác minh 2 phía hoàn tất.
-  2. *GMV Hoàn Tất:* Tổng doanh số đồ cũ thật.
-  3. *Tin Đăng Thật:* Theo dõi chỉ tiêu Gate W12 ($\ge 40$ listings).
-  4. *Tỷ Lệ Repeat Seller:* Phần trăm người bán quay lại đăng $\ge 2$ sản phẩm.
-  5. *Quỹ Tiền Mặt:* Sổ quỹ đối soát $30.250.000 \text{ VNĐ}$.
-* **Bảng Phán Quyết Tranh Chấp:** Cho phép Admin bấm **"✓ Hoàn 100% Tiền Cho Buyer"** hoặc **"✓ Bác Bỏ & Chuyển Tiền Cho Seller"**.
-
----
-
-## 📁 CẤU TRÚC THƯ MỤC DỰ ÁN
-
+```powershell
+npm ci
+npm start
 ```
-e:\Fall2026\ISC301\Project\
-├── package.json                          # Cấu hình dependency & lệnh npm start
-├── server.js                             # Express Backend RESTful API & Escrow State Machine
-├── db.js                                 # Database SQLite (node:sqlite) + Dữ liệu mẫu sinh viên
-├── taketwo.db                            # File dữ liệu SQLite lưu trữ vĩnh viễn
-├── TAKETWO_MASTER_V2_SPECIFICATION.md    # Tài liệu đặc tả kỹ thuật & mô hình kinh doanh chi tiết
-├── public/
-│   ├── index.html                        # Giao diện Pancake Fintab Tiếng Việt 100%
-│   ├── css/
-│   │   └── style.css                     # Design System Cobalt Blue (#1677FF), Status Pills
-│   └── js/
-│       └── app.js                        # Xử lý State, Escrow Countdown, VietQR, Đẩy tin 1-Click
-└── README.md
+
+Mở http://localhost:3000. Admin đăng nhập được chuyển sang http://localhost:3000/admin.html. Giao diện dùng dashboard xanh TakeTwo; mỗi màn thực hiện một việc, hỗ trợ URL hash, reload và Back.
+
+## Tài khoản mẫu
+
+| Vai trò | Email | Mật khẩu seed |
+|---|---|---|
+| Buyer | tuanvhhe194875@fpt.edu.vn | Student@123 |
+| Seller | minhanh.seller@fpt.edu.vn | Student@123 |
+| Sinh viên | longtb.vnu@vnu.edu.vn | Student@123 |
+| Admin | admin@taketwo.vn | Admin@TakeTwo2026 |
+
+Trong chế độ mô phỏng có bộ chọn tài khoản ở sidebar và OTP/mật khẩu tắt `123456`. OTP tạo mới hiện trong biểu mẫu; không gửi email. Kiểm tra email sinh viên ở admin được ghi nhãn local, chưa xác minh với trường.
+
+## Luồng sử dụng
+
+1. Seller đăng món đồ; điểm hẹn gợi ý **không bắt buộc**. Tin vào hàng chờ duyệt. Seller mở được chi tiết tin vừa đăng bằng ID server trả về.
+2. Admin → Người dùng & Kiểm duyệt → duyệt tin. Tin được tìm thấy công khai và có thể đẩy top. Các gói: 15.000đ/1, 49.000đ/5, 79.000đ/10 lượt; mỗi lượt ưu tiên 7 ngày.
+3. Buyer mở chi tiết, nhắn tin cho seller trước khi đặt mua. Chat hỗ trợ ảnh, chưa đọc và tải tin nhắn cũ. Người ngoài không đọc được hội thoại hoặc ảnh riêng tư.
+4. Buyer đặt mua, chọn gặp trực tiếp hoặc TakeTwo vận chuyển, xác nhận người nhận và địa điểm. Nhập mã voucher nếu có; **không tự giảm cố định 5.000đ**.
+5. Nếu thiếu tiền, checkout hiển thị số thiếu và mở nạp tiền. Sau nạp quay lại kiểm tra báo giá; không tự đặt hàng. Bản nháp checkout lưu trong sessionStorage theo tài khoản, phục hồi sau reload.
+6. Đặt mua giữ tiền và chuyển sản phẩm RESERVED. Buyer hủy/seller từ chối khi REQUESTED được hoàn toàn bộ, không giữ phí.
+7. Seller chấp nhận. Gặp trực tiếp: seller xác nhận đã bàn giao. Vận chuyển: seller nhập địa chỉ lấy hàng, **không nhập mã vận đơn**; admin xác nhận lấy hàng và điều phối các bước tiếp theo.
+8. Từ bàn giao/lấy hàng bắt đầu 120 giờ. Buyer xác nhận nhận hàng hoặc hệ thống tự hoàn tất. Scheduler kiểm tra khi khởi động và mỗi 30 giây; màn đơn đồng bộ mỗi 10 giây.
+9. Khi ACCEPTED hoặc DELIVERING và còn giữ tiền, buyer gửi khiếu nại. Hàng hỏng/sai hàng/sai mô tả cần ảnh; chưa nhận hàng có thể giải trình bằng văn bản. Hồ sơ đóng băng Escrow, lưu deadline cũ; hai bên bổ sung bằng chứng, kể cả khi bị khóa tài khoản.
+10. Admin đọc hồ sơ/chat theo vụ việc, đánh dấu thẩm định rồi chọn giải ngân hoặc hoàn sau trừ phí. Nội dung bổ sung mới làm mất dấu thẩm định cũ. Mọi quyết định cần lý do, lưu người và thời gian. Không có hoàn một phần hoặc số tiền admin tự nhập.
+
+## Quy tắc tiền
+
+`P`: tiền hàng; `S`: ship; `D`: voucher; `C = P + S - D`; `F = round(P × 3%)`; `Fr = min(F, C)`.
+
+| Kết quả | Buyer | Seller | Đơn vị vận chuyển | Sàn ròng trước chi phí khác |
+|---|---|---|---|---|
+| Hoàn tất | Đã trả C | P − F | Khoản phải trả S | F − D |
+| Hoàn sau tranh chấp | Nhận lại C − Fr | 0 | Cước K đã phát sinh | Fr − K |
+| Hủy khi REQUESTED | Nhận lại C | 0 | 0 | 0 |
+
+Ví dụ P=150.000, S=15.000, D=5.000: buyer trả 160.000; khi hoàn tất seller nhận 145.500, phải trả vận chuyển 15.000, sàn ròng −500. Nếu hoàn sau lấy hàng: buyer nhận 155.500, giữ phí 4.500, TakeTwo chịu cước 15.000, sàn ròng −10.500.
+
+Cước phát sinh một lần lúc admin xác nhận lấy hàng; khoản phải trả chỉ thanh toán mô phỏng một lần, có mã đối soát. Không dùng phí ship làm thu nhập của seller. Hoàn tiền trả lại ngân sách/lượt voucher; voucher không đổi thành tiền mặt. Hoàn tiền chỉ xử lý khi Escrow còn giữ, chưa hỗ trợ thu hồi tiền đã giải ngân.
+
+Mọi biến động tiền có transaction SQLite và bút toán cân bằng. Các API tài chính hỗ trợ header `Idempotency-Key`; gửi lại cùng khóa/nội dung trả kết quả cũ, đổi nội dung bị 409. Frontend giữ khóa khi lỗi mạng để có thể thử lại. Sai trạng thái 409, sai quyền 403.
+
+## Admin
+
+Admin không đặt mua, đăng bán, đẩy tin, nạp/rút hay tham gia chat như người dùng.
+
+- Tổng quan: GMV hàng đã hoàn tất, phí, voucher, boost, cước bù, đóng góp ròng, Escrow, tỷ lệ hoàn tất/tranh chấp. Mặc định 30 ngày; tỷ lệ theo nhóm đơn tạo trong kỳ, doanh thu theo kỳ quyết toán; Escrow là số hiện tại. Toàn bộ KPI gắn dữ liệu mô phỏng.
+- Đối soát: buyer/seller, tiền hàng/ship/voucher/đã trả/phí/seller nhận/hoàn/cước/sàn ròng; lọc ngày, tên, trạng thái, phương thức, voucher, đơn lỗ và giữ tiền. Tổng cộng theo toàn bộ kết quả lọc.
+- Vận chuyển: địa chỉ lấy/giao, mã nội bộ, các bước trạng thái, cước và thanh toán đối tác có tham chiếu.
+- Escrow: tổng giữ, deadline, gần/quá hạn, sai lệch từng buyer; giải ngân thủ công cần lý do và không ghi nhận là buyer xác nhận. Tranh chấp không được bỏ qua hồ sơ.
+- Tranh chấp: bằng chứng và giải trình hai phía, chat, dự tính tài chính, yêu cầu bổ sung và quyết định. Seller có mục tiêu 48h, admin 72h; quá hạn ưu tiên xử lý, không tự phán quyết.
+- Người dùng/kiểm duyệt: lịch sử đơn/vi phạm, cảnh cáo, khóa/mở có lý do, kiểm tra email local, duyệt/ẩn tin và xử lý báo cáo. Tài khoản khóa vẫn đọc đơn và giải trình; không tạo giao dịch mới.
+- Voucher: tạo/sửa/bật/tắt; cố định/phần trăm, trần giảm, đơn tối thiểu, lịch, đối tượng, tổng ngân sách, lượt toàn chiến dịch/mỗi người, báo cáo GMV/trợ giá/đóng góp. Không duyệt từng lần dùng. Ngân sách mới không thấp hơn số đã dùng + đang giữ.
+
+## Kiểm tra và dữ liệu
+
+```powershell
+npm test
+npm run db:check
+node scripts/local-browser-check.mjs
 ```
+
+37 kiểm thử service/API gồm quyền, state machine, tranh mua, ngân sách voucher, tiền ship/hoàn sau phí, chống gửi lặp, rollback, ảnh riêng tư, khóa demo và persistence. Browser check tự mở Chrome headless, chạy database riêng trong `scratch/`, kiểm tra luồng mua trực tiếp, vận chuyển/tranh chấp, chat, checkout thiếu tiền, reload và admin ở 1440/768/390px. Ảnh và kết quả được lưu trong thư mục QA riêng, không thay dữ liệu người dùng.
+
+`db:check` chỉ đọc; kiểm tra Escrow từng ví, bút toán và dự trữ voucher nếu có schema mới. Sai lệch chặn quyết toán liên quan; không tự cân số dư để giấu lỗi.
+
+Database không reset khi khởi động. Migration sao lưu vào `backups/` trước cập nhật schema; giữ số dư, ID, đơn cũ và đánh dấu phiên bản kế toán lịch sử. Sổ bút toán mới ghi từ phiên bản nâng cấp, không dựng lại toàn bộ giao dịch quá khứ.
+
+Muốn reset mẫu: dừng server, chạy:
+
+```powershell
+npm run demo:reset
+npm start
+```
+
+Reset chủ động cũng sao lưu. Khôi phục bằng cách dừng server, giữ bản database hiện tại, sao chép bản sao đã chọn thành `taketwo.db`, rồi khởi động lại. Sao lưu cả `uploads/` nếu cần bảo toàn ảnh chat/bằng chứng.
+
+## Cấu hình và cấu trúc
+
+PowerShell: `$env:PORT='3001'` hoặc `$env:DEMO_MODE='false'`; chương trình không tự đọc `.env`.
+
+| Biến | Mặc định |
+|---|---|
+| PORT / HOST | 3000 / 127.0.0.1 |
+| TAKETWO_DB_PATH | taketwo.db trong dự án |
+| DEMO_MODE | true; false khóa OTP/Google/chuyển tài khoản/nạp-rút/giả lập thời gian |
+| JWT_SECRET | Sinh mỗi lần chạy nếu không đặt; restart yêu cầu đăng nhập lại |
+
+`services/marketplace.js`: tiền và trạng thái; `vouchers.js`: quy tắc voucher; `ledger.js`: bút toán; `operations.js`: vận chuyển/hồ sơ/admin; `reports.js`: báo cáo; `migrate-active.js`: bổ sung dữ liệu vận chuyển đang giữ tiền. Frontend dùng `app.js`, `workspace.js`, `plan-ui.js`, và admin riêng `admin.js`.
+
+Ảnh bằng chứng JPEG/PNG/WebP tối đa 5MB, tối đa 5 ảnh/nội dung, lưu ngoài public; kiểm tra chữ ký file và quyền người xem. Phần mở rộng sau: nhiều ảnh listing, review và thông báo tập trung. Thanh toán/email/vận chuyển thật và triển khai online chưa tích hợp.

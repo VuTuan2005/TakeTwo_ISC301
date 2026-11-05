@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TakeTwo — Sơ đồ luồng mua bán</title>
+<style>
+  :root { --ink:#182638; --muted:#526174; --line:#dce3eb; --blue:#1677ff; --ground:#f4f6f9; }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--ink); background:var(--ground); font:15px/1.6 "Segoe UI",Arial,sans-serif; }
+  button { font:inherit; cursor:pointer; }
+  button:focus-visible,a:focus-visible { outline:3px solid #1677ff; outline-offset:3px; }
+  .shell { max-width:1600px; margin:auto; padding:32px; }
+  header { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; margin-bottom:26px; }
+  .brand { color:var(--blue); font-weight:750; font-size:17px; margin-bottom:8px; }
+  h1 { font-size:clamp(26px,3vw,38px); line-height:1.2; letter-spacing:-.035em; margin:0 0 12px; font-weight:650; }
+  header p { color:var(--muted); margin:0; max-width:760px; }
+  .source { font-size:12px; color:var(--muted); white-space:nowrap; padding-top:8px; }
+  .tools { background:white; border:1px solid var(--line); padding:14px 18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; border-radius:10px 10px 0 0; }
+  .scenarios { display:flex; gap:5px; flex-wrap:wrap; }
+  button { background:white; color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:7px 12px; min-height:40px; }
+  button:hover { background:#f1f5fa; }
+  .scenarios button[aria-pressed="true"] { background:var(--ink); border-color:var(--ink); color:white; }
+  .zoom { display:flex; gap:6px; align-items:center; margin-left:auto; }
+  #zoomValue { font-size:13px; min-width:44px; text-align:center; font-variant-numeric:tabular-nums; }
+  .layout { display:grid; grid-template-columns:minmax(0,1fr) 290px; align-items:start; gap:20px; }
+  .diagram { min-width:0; }
+  .legend { background:white; display:flex; gap:18px; padding:14px 18px; flex-wrap:wrap; border:1px solid var(--line); border-top:0; font-size:13px; }
+  .legend span { display:flex; align-items:center; gap:7px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--c); }
+  .viewport { overflow:auto; background:white; border:1px solid var(--line); border-top:0; border-radius:0 0 10px 10px; }
+  #flow { display:block; width:100%; min-width:850px; height:auto; }
+  .edge { fill:none; stroke:#8291a3; stroke-width:2; marker-end:url(#arrow); stroke-linejoin:round; }
+  .edge.positive { stroke:#287956; marker-end:url(#arrowGreen); }
+  .edge.negative { stroke:#b16d34; marker-end:url(#arrowAmber); }
+  .edge-label { font:14px "Segoe UI",Arial,sans-serif; fill:#526174; paint-order:stroke; stroke:white; stroke-width:7px; stroke-linejoin:round; }
+  .node { cursor:pointer; }
+  .node rect,.node polygon { stroke:var(--node-color); stroke-width:1.5; fill:var(--node-bg); }
+  .node .owner { font:600 12px "Segoe UI",Arial,sans-serif; fill:var(--node-color); }
+  .node .title { font:600 18px "Segoe UI",Arial,sans-serif; fill:#182638; }
+  .node .sub { font:14px "Segoe UI",Arial,sans-serif; fill:#526174; }
+  .node.selected rect,.node.selected polygon,.node:focus rect,.node:focus polygon { stroke-width:4; }
+  .node:focus { outline:none; }
+  .node.dim,.edge.dim,.edge-label.dim { opacity:.16; }
+  .stage-line { stroke:#e8edf3; stroke-width:1; stroke-dasharray:5 6; }
+  .stage-title { font:600 13px "Segoe UI",Arial,sans-serif; fill:#69788a; }
+  aside { position:sticky; top:20px; }
+  .panel { padding:22px; border:1px solid var(--line); background:white; border-radius:10px; margin-bottom:16px; }
+  .panel h2 { font-size:18px; margin:0 0 12px; line-height:1.4; }
+  .panel p { margin:0 0 12px; color:var(--muted); font-size:14px; }
+  .panel p:last-child { margin-bottom:0; }
+  .owner-label { font-size:12px; font-weight:650; margin-bottom:6px; color:var(--blue); }
+  .api { display:block; overflow-wrap:anywhere; padding:10px 12px; background:#f4f6f9; border-radius:5px; font:12px/1.7 Consolas,monospace; margin-top:16px; }
+  .states { display:flex; flex-wrap:wrap; gap:6px; }
+  .states code { font-size:11px; background:#edf2f7; padding:3px 6px; border-radius:4px; }
+  .caption { font-size:13px; color:var(--muted); margin:10px 0 22px; }
+  .support { margin-top:24px; background:white; border:1px solid var(--line); border-radius:10px; padding:24px; }
+  .support h2 { margin:0 0 8px; font-size:21px; }
+  .support h3 { margin:0 0 8px; font-size:16px; }
+  .support p { color:var(--muted); margin:0; font-size:14px; }
+  .support-grid { display:grid; grid-template-columns:1fr 1fr; gap:30px; margin-top:22px; }
+  .sequence { margin:12px 0; padding:12px 14px; background:#f4f7fb; color:var(--ink); font-size:14px; border-radius:6px; }
+  .note { margin-top:20px !important; padding-top:18px; border-top:1px solid var(--line); }
+  footer { color:var(--muted); font-size:12px; margin:22px 0 0; }
+  @media(max-width:1100px) { .layout { grid-template-columns:minmax(0,1fr); } aside { position:static; display:grid; grid-template-columns:1fr 1fr; gap:16px; } .panel { margin:0; } .panel:last-child { grid-column:1/-1; } }
+  @media(max-width:640px) { .shell { padding:20px 14px; } header { display:block; } .source { margin-top:12px; } .tools { padding:12px; } .zoom { margin-left:0; flex-wrap:wrap; } .scenarios { width:100%; } .scenarios button { font-size:13px; padding:7px 9px; } aside,.support-grid { display:block; } .panel { margin-bottom:12px; } .support-grid>div+div { margin-top:24px; } .support { padding:20px; } button { min-height:44px; } }
+  @media print { body { background:white; } .shell { padding:0; } .tools,aside,.caption,footer { display:none; } .layout { display:block; } .viewport { overflow:visible; border:0; } #flow { width:100% !important; min-width:0 !important; } .node.dim,.edge.dim,.edge-label.dim { opacity:1; } header { margin-bottom:12px; } .legend { border:0; } .support { break-before:page; } }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div><div class="brand">TakeTwo / Tài liệu hệ thống</div><h1>Luồng mua bán & Escrow</h1><p>Từ trao đổi trước mua, đăng bán, đặt mua đến nhận tiền. Ba kết quả giao dịch: người mua xác nhận, tự hoàn tất sau 5 ngày (120h), hoặc admin đối soát hồ sơ khiếu nại bằng chứng (Giải ngân P − F hoặc Hoàn tiền sau khi trừ phí sàn C − Fr).</p></div>
+    <div class="source">Theo mã nguồn hiện tại<br>Express · SQLite · Ví mô phỏng</div>
+  </header>
+  <div class="layout">
+    <div class="diagram">
+      <div class="tools" aria-label="Điều khiển sơ đồ">
+        <div class="scenarios" aria-label="Kịch bản">
+          <button data-scenario="all" aria-pressed="true">Toàn luồng</button>
+          <button data-scenario="normal" aria-pressed="false">Mua thành công</button>
+          <button data-scenario="auto" aria-pressed="false">Hết 5 ngày</button>
+          <button data-scenario="refund" aria-pressed="false">Khiếu nại / Hoàn tiền</button>
+        </div>
+        <div class="zoom"><button id="zoomOut" aria-label="Thu nhỏ">−</button><span id="zoomValue" aria-live="polite">100%</span><button id="zoomIn" aria-label="Phóng to">+</button><button id="fit">Vừa khung</button><button id="saveSvg">Tải SVG</button><button id="print">In / PDF</button></div>
+      </div>
+      <div class="legend" aria-label="Chú giải">
+        <span><i class="dot" style="--c:#1767b7"></i>Người mua</span><span><i class="dot" style="--c:#287956"></i>Người bán</span><span><i class="dot" style="--c:#69778c"></i>Hệ thống</span><span><i class="dot" style="--c:#a56327"></i>Admin</span><span>Hình thoi: điều kiện / lựa chọn</span>
+      </div>
+      <div class="viewport" id="viewport" tabindex="0" aria-label="Sơ đồ, có thể cuộn ngang để xem trên điện thoại">
+        <svg id="flow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 2610" role="img" aria-labelledby="diagramTitle diagramDesc"><title id="diagramTitle">Toàn bộ luồng mua bán TakeTwo</title><desc id="diagramDesc">Người bán đăng tin. Người mua tìm sản phẩm, đăng nhập và thanh toán bằng ví. Hệ thống giữ tiền Escrow, người bán nhận và gửi đơn. Người mua xác nhận hoặc hệ thống tự hoàn tất sau 5 ngày. Khiếu nại được admin giải quyết bằng hoàn tiền hoặc giải ngân.</desc></svg>
+      </div>
+      <p class="caption">Đọc từ trên xuống theo mũi tên. Bấm hoặc dùng phím Tab và Enter trên một bước để xem chi tiết. Trên điện thoại, cuộn ngang sơ đồ hoặc chọn “Vừa khung”.</p>
+    </div>
+    <aside aria-label="Giải thích sơ đồ">
+      <section class="panel" id="detail" aria-live="polite"><div class="owner-label" id="detailOwner">HƯỚNG DẪN</div><h2 id="detailTitle">Một luồng, ba kết quả</h2><p id="detailText">Chọn một bước trong sơ đồ để xem điều kiện, thay đổi trạng thái và API tương ứng. Các bộ lọc làm nổi bật một kịch bản, vẫn giữ toàn bộ sơ đồ để đối chiếu.</p><div id="detailApi"></div></section>
+      <section class="panel"><h2>Trạng thái chính</h2><p>Sản phẩm</p><div class="states"><code>AVAILABLE</code><code>RESERVED</code><code>SOLD</code></div><p style="margin-top:16px">Đơn hàng</p><div class="states"><code>REQUESTED</code><code>ACCEPTED</code><code>DELIVERING</code><code>DISPUTED</code><code>COMPLETED</code><code>COMPLETED_AUTO</code><code>CANCELLED</code></div><p style="margin-top:16px">Tiền Escrow</p><div class="states"><code>HELD</code><code>RELEASED</code><code>REFUNDED</code></div></section>
+      <section class="panel"><h2>Thời điểm giữ tiền</h2><p>Tiền được giữ và sản phẩm chuyển RESERVED ngay khi đặt mua, trước khi người bán nhận đơn.</p><p>Đồng hồ 120 giờ bắt đầu khi người bán bấm gửi hàng. Khiếu nại xóa hạn tự xác nhận và giữ nguyên tiền đang tạm giữ.</p></section>
+    </aside>
+  </div>
+  <section class="support">
+    <h2>Các luồng hỗ trợ giao dịch</h2>
+    <p>Các luồng này hoạt động độc lập với trạng thái của đơn mua bán.</p>
+    <div class="support-grid">
+      <div><h3>Tài khoản & ví</h3><div class="sequence">Đăng ký / Đăng nhập → Nhận ví → Nạp tiền mô phỏng → Số dư khả dụng</div><p>Đăng ký bằng OTP hoặc mật khẩu; Google và chuyển tài khoản là các lối demo. Nạp tối thiểu 10.000đ; rút tối thiểu 20.000đ và phải đủ số dư. Sổ quỹ ghi nhận các biến động.</p></div>
+      <div><h3>Đẩy tin cho người bán</h3><div class="sequence">Chọn sản phẩm của mình → Dùng lượt VIP hoặc thanh toán → Ưu tiên hiển thị</div><p>Mua gói cộng lượt: 15.000đ / 1 lượt, 49.000đ / 5 lượt, 79.000đ / 10 lượt. Khi đẩy trực tiếp, hệ thống ưu tiên trừ 1 lượt; hết lượt thì trừ 15.000đ. Chọn gói ngay trong popup đẩy tin là một nhánh xử lý riêng trong code.</p></div>
+      <div><h3>Dòng tiền của một đơn</h3><div class="sequence">Tiền buyer thanh toán: C = P + S − D<br>Đơn hoàn tất: Seller nhận = P − F (F = 3% P), cước S phải trả đơn vị vận chuyển<br>Khiếu nại hợp lệ: Buyer nhận = C − Fr (Fr = min(F, C)), sàn giữ Fr và chịu cước đã phát sinh</div><p>Gặp trực tiếp 0đ; giao phòng KTX 15.000đ; giao nhanh 25.000đ. Hủy khi chờ seller chấp nhận (REQUESTED) hoàn toàn bộ C, không giữ phí. Sau khi seller chấp nhận, yêu cầu hoàn tiền đi qua hồ sơ tranh chấp. Không có hoàn một phần. Voucher có ngân sách giữ chỗ và bút toán trợ giá riêng.</p></div>
+      <div><h3>Cổng Quản Trị & Bảo Mật Admin</h3><div class="sequence">Cổng riêng tại /admin.html → Đối soát sổ cái & duyệt khiếu nại bằng chứng</div><p>Admin quản lý, không tham gia mua bán hay ví cá nhân. Vấn đề hàng hỏng, giao sai hoặc sai mô tả cần ảnh JPEG/PNG/WebP tối đa 5MB/ảnh. Chưa nhận hàng được giải trình bằng văn bản. Hai bên bổ sung thông tin trong hồ sơ; admin phải thẩm định, ghi căn cứ và lý do trước khi ra quyết định.</p></div>
+    </div>
+    <p class="note">Auto-confirm kiểm tra khi khởi động và mỗi 30 giây; đơn tranh chấp được đóng băng. Nút “giả lập 5 ngày” là đường tắt mô phỏng. Hủy ở REQUESTED được hoàn toàn bộ; sau khi seller chấp nhận cần xử lý qua hồ sơ khiếu nại. Vấn đề hàng hóa cần ảnh; chưa nhận hàng có thể giải trình bằng văn bản. Nạp/rút và giao nhận chưa tích hợp ngân hàng hoặc đơn vị vận chuyển thật.</p>
+  </section>
+  <footer>Nguồn đối chiếu: server.js · db.js · public/js/app.js. File HTML độc lập, không gửi yêu cầu hoặc thay đổi dữ liệu của hệ thống.</footer>
+  <noscript><p>Sơ đồ tương tác cần JavaScript. Luồng chính: Đăng bán → Tìm kiếm → Đặt mua → Giữ tiền → Nhận đơn → Gửi hàng → Xác nhận hoặc hết 5 ngày → Giải ngân. Khiếu nại → Admin → Hoàn tiền hoặc giải ngân.</p></noscript>
+</div>
+<script>
+(() => {
+  'use strict';
+  const NS='http://www.w3.org/2000/svg';
+  const svg=document.getElementById('flow');
+  const actors={buyer:['Người mua','#1767b7','#f0f7ff'],seller:['Người bán','#287956','#f1f9f4'],system:['Hệ thống','#69778c','#f5f7fa'],admin:['Admin','#a56327','#fff8ef']};
+  const nodes=[
+    {id:'listing',x:700,y:120,actor:'seller',title:'Đăng sản phẩm',sub:'Tên · Giá · Danh mục · Điểm hẹn tùy chọn',text:'Người bán đăng nhập và nhập thông tin món đồ, tình trạng, cụm trường và tải ảnh thật (tối đa 5MB). Điểm hẹn là tùy chọn, không bắt buộc.',api:'POST /api/products'},
+    {id:'publish',x:700,y:250,actor:'system',title:'Hiển thị trên sàn',sub:'Sản phẩm: AVAILABLE',text:'Listing mới ở trạng thái AVAILABLE công khai. Sinh viên có thể tìm kiếm, lọc cụm trường, tình trạng và lưu yêu thích.',api:'GET /api/products'},
+    {id:'chat',x:270,y:380,actor:'buyer',title:'Chat trước khi đặt mua',sub:'Hỏi chi tiết · Hẹn giờ · Trao đổi ảnh',text:'Người mua có thể nhắn tin trực tiếp với người bán trước khi mua mà không cần đặt cọc hay giữ tiền. Hỗ trợ gửi ảnh và trao đổi thực tế.',api:'POST /api/chat/conversations & /messages'},
+    {id:'discover',x:700,y:380,actor:'buyer',title:'Tìm và chọn sản phẩm',sub:'Xem chi tiết → Chat hoặc Đặt mua',text:'Người mua xem chi tiết ảnh thật, mô tả khuyết điểm, thông tin người bán và chọn Nhắn tin hoặc Đặt mua qua ví Escrow.',api:'GET /api/products/:id'},
+    {id:'checkout',x:700,y:520,actor:'buyer',title:'Báo giá & Voucher',sub:'Quote API: P, S, D, C, F preview',text:'Quote API tính toán minh bạch: tiền hàng P, phí ship S, voucher D, tổng thanh toán C và phí sàn F dự kiến. Hiển thị chính sách hoàn tiền sau khi trừ phí.',api:'POST /api/checkout/quote'},
+    {id:'eligible',x:700,y:670,actor:'system',title:'Đủ điều kiện mua?',sub:'Đã đăng nhập · AVAILABLE · Không tự mua · Không phải Admin',decision:true,text:'Backend kiểm tra tài khoản hợp lệ, sản phẩm AVAILABLE, không tự mua và chặn vai trò ADMIN tham gia giao dịch người dùng.',api:'requireAuth + checkTradingRole'},
+    {id:'blocked',x:1130,y:670,actor:'buyer',title:'Chưa thể đặt mua',sub:'Đăng nhập hoặc chọn sản phẩm khác',text:'Tài khoản chưa đăng nhập, tự mua, hoặc tài khoản ADMIN bị chặn giao dịch mua bán.'},
+    {id:'balance',x:700,y:830,actor:'system',title:'Ví đủ số dư?',sub:'Số dư khả dụng >= Tổng thanh toán C',decision:true,text:'Kiểm tra số dư khả dụng. Nếu thiếu, hệ thống hiển thị số tiền còn thiếu và nút Nạp thêm tiền với số tiền gợi ý làm tròn lên 10.000đ.'},
+    {id:'topup',x:270,y:830,actor:'buyer',title:'Nạp thêm tiền vào ví',sub:'Nạp mô phỏng từ Checkout không mất form',text:'Người mua bấm Nạp thêm tiền ngay tại checkout. Sau khi nạp thành công, form giữ nguyên dữ liệu và tự động cập nhật báo giá.',api:'POST /api/wallet/topup'},
+    {id:'hold',x:700,y:990,actor:'system',title:'Tạo đơn & Giữ Escrow',sub:'REQUESTED · HELD · RESERVED',text:'Trừ C khỏi số dư khả dụng, tăng escrow_balance, ghi chứng từ ESCROW_HOLD, chuyển sản phẩm RESERVED và đơn REQUESTED.',api:'POST /api/orders/checkout'},
+    {id:'cancelReq',x:270,y:1140,actor:'buyer',title:'Hủy đơn chưa duyệt',sub:'Hoàn 100% C · Phí sàn 0đ',text:'Nếu người bán chưa nhận đơn, người mua có quyền hủy đơn (hoặc người bán từ chối). Tiền Escrow hoàn 100% về ví khả dụng, voucher hoàn lại.',api:'POST /api/orders/:id/cancel-requested'},
+    {id:'accept',x:700,y:1140,actor:'seller',title:'Chấp nhận đơn hàng',sub:'Đơn: ACCEPTED',text:'Người bán chấp nhận giao dịch. Chưa kích hoạt đồng hồ 120 giờ; chờ chuyển sang khâu giao nhận tương ứng.',api:'POST /api/orders/:id/accept'},
+    {id:'ship',x:700,y:1310,actor:'seller',title:'Giao nhận: 2 nhánh',sub:'Gặp trực tiếp HOẶC TakeTwo vận chuyển',decision:true,text:'Nhánh 1: Gặp trực tiếp tại trường/KTX (0đ ship, seller xác nhận bàn giao). Nhánh 2: TakeTwo vận chuyển (seller cung cấp địa chỉ lấy, bưu tá điều phối mã nội bộ TK-DLV).',api:'POST /api/orders/:id/ship | /ready-pickup'},
+    {id:'timer',x:700,y:1500,actor:'system',title:'Kích hoạt đồng hồ 120 giờ',sub:'DELIVERING · HELD · Deadline 5 ngày',text:'Đơn chuyển DELIVERING khi đã bàn giao trực tiếp hoặc bưu tá lấy hàng. Kích hoạt đồng hồ 120 giờ bảo vệ Escrow.',api:'shipped_at + auto_confirm_deadline'},
+    {id:'outcome',x:700,y:1690,actor:'buyer',title:'Kết quả nhận hàng?',sub:'Hài lòng / Hết 5 ngày / Khiếu nại bằng chứng',decision:true,text:'Ba kịch bản: Buyer xác nhận hài lòng; Hết 120 giờ không tranh chấp tự hoàn tất; hoặc Buyer gửi hồ sơ khiếu nại có ảnh chụp bằng chứng.'},
+    {id:'confirm',x:270,y:1880,actor:'buyer',title:'Đã nhận & Hài lòng',sub:'Yêu cầu hoàn tất ngay',text:'Người mua xác nhận đã nhận hàng và hài lòng. Hệ thống lập tức giải phóng Escrow và quyết toán tiền.',api:'POST /api/orders/:id/confirm'},
+    {id:'auto',x:700,y:1880,actor:'system',title:'Hết 5 ngày, không khiếu nại',sub:'DELIVERING + HELD + Quá hạn',text:'Scheduler tự động kiểm tra định kỳ đơn quá hạn và giải ngân cho người bán theo trạng thái COMPLETED_AUTO.',api:'marketplace.expire() / cron'},
+    {id:'dispute',x:1130,y:1880,actor:'buyer',title:'Khiếu nại có bằng chứng',sub:'Upload ảnh thực tế + Chọn loại vấn đề',text:'Người mua chọn loại vấn đề (sai hàng, hư hỏng, chưa nhận...), nhập mô tả và upload ảnh bằng chứng qua /api/upload.',api:'POST /api/orders/:id/dispute'},
+    {id:'freeze',x:1130,y:2040,actor:'system',title:'Đóng băng Escrow',sub:'DISPUTED · HELD · Dừng countdown',text:'Đơn chuyển DISPUTED, lưu lý do và danh sách ảnh bằng chứng. Dừng ngay đồng hồ 120h, tiền vẫn đóng băng an toàn trong Escrow.',api:'DISPUTED status transition'},
+    {id:'ruling',x:1130,y:2210,actor:'admin',title:'Admin đối soát hồ sơ',sub:'Xem ảnh, tin nhắn tại /admin.html',decision:true,text:'Admin mở hồ sơ tại Cổng Quản Trị /admin.html, đối chiếu ảnh chụp thật, lịch sử chat và giao nhận để ra phán quyết cuối cùng.',api:'POST /api/admin/disputes/:id/resolve'},
+    {id:'release',x:700,y:2420,actor:'system',title:'Giải ngân cho người bán',sub:'Seller nhận: P − F | Ship trả bưu tá',text:'Giải phóng Escrow: Seller nhận P − F (F = 3% P; không cộng tiền ship vào seller). Tiền ship S thanh toán cho bưu tá. Đơn COMPLETED.',api:'marketplace.settle()'},
+    {id:'refund',x:1130,y:2420,actor:'system',title:'Hoàn sau trừ phí sàn',sub:'Buyer nhận: C − Fr (Fr = min(F, C))',text:'Hoàn tiền sau khi trừ phí sàn: Buyer nhận C − Fr, Sàn giữ phí Fr, Sàn bù chi phí vận chuyển nếu đã lấy hàng. Tuyệt đối không hoàn một phần.',api:'marketplace.refundAfterFee()'}
+  ];
+  // Full-height graph; all coordinates and connections share this one data source.
+  const common=['listing','publish','discover','checkout','eligible','balance','hold','accept','ship','timer','outcome'];
+  const routes={normal:new Set([...common,'confirm','release']),auto:new Set([...common,'auto','release']),refund:new Set([...common,'dispute','freeze','ruling','refund'])};
+  const edges=[];
+  function edge(from,to,d,label,x,y,tone=''){edges.push({from,to,d,label,x,y,tone});}
+  edge('listing','publish','M700 175V195');
+  edge('publish','discover','M700 305V325');
+  edge('discover','chat','M535 380H435','Hỏi trước',480,365);
+  edge('chat','checkout','M270 435V520H535','Chốt mua',370,505);
+  edge('discover','checkout','M700 435V465');
+  edge('checkout','eligible','M700 575V605');
+  edge('eligible','blocked','M870 670H965','Không',918,657);
+  edge('eligible','balance','M700 735V765','Có',717,750);
+  edge('balance','topup','M530 830H435','Không đủ',474,813);
+  edge('topup','checkout','M270 775V520H535','Nạp xong',310,505);
+  edge('balance','hold','M700 895V935','Đủ',717,915);
+  edge('hold','cancelReq','M535 990H270V1085','Hủy sớm',360,975);
+  edge('hold','accept','M700 1045V1085');
+  edge('accept','ship','M700 1195V1245');
+  edge('ship','timer','M700 1375V1445','Đã gửi/lấy',717,1410);
+  edge('timer','outcome','M700 1555V1625');
+  edge('outcome','confirm','M530 1690H270V1825','Hài lòng',325,1674,'positive');
+  edge('outcome','auto','M700 1755V1825','Quá 120h',716,1790);
+  edge('outcome','dispute','M870 1690H1130V1825','Khiếu nại',940,1674,'negative');
+  edge('dispute','freeze','M1130 1935V1985');
+  edge('freeze','ruling','M1130 2095V2145');
+  edge('ruling','refund','M1130 2275V2365','Phán quyết Hoàn',1147,2320,'negative');
+  edge('ruling','release','M960 2210H900V2420H865','Phán quyết Trả',918,2195,'positive');
+  edge('confirm','release','M270 1935V2420H535','Xác nhận hoàn tất',318,2404,'positive');
+  edge('auto','release','M700 1935V2365','Tự hoàn tất',716,2150,'positive');
+  function el(tag,attrs={},text){const e=document.createElementNS(NS,tag);for(const[k,v]of Object.entries(attrs))e.setAttribute(k,String(v));if(text!==undefined)e.textContent=text;return e;}
+  const defs=el('defs');
+  for(const[id,color]of [['arrow','#8291a3'],['arrowGreen','#287956'],['arrowAmber','#b16d34']]){const m=el('marker',{id,viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'});m.append(el('path',{d:'M0 0L10 5L0 10Z',fill:color}));defs.append(m);}svg.append(defs);
+  for(const[y,title]of [[35,'ĐĂNG BÁN & KHÁM PHÁ'],[625,'KIỂM TRA & THANH TOÁN'],[1180,'XỬ LÝ ĐƠN & GIAO HÀNG'],[1645,'XÁC NHẬN & NGOẠI LỆ']]){svg.append(el('text',{x:45,y,class:'stage-title'},title));svg.append(el('line',{x1:45,x2:1355,y1:y+14,y2:y+14,class:'stage-line'}));}
+  for(const e of edges){e.element=el('path',{d:e.d,class:'edge '+e.tone});svg.append(e.element);if(e.label){e.labelElement=el('text',{x:e.x,y:e.y,class:'edge-label'},e.label);svg.append(e.labelElement);}}
+  for(const n of nodes){const[a,c,bg]=actors[n.actor];const g=el('g',{class:'node',tabindex:0,role:'button','aria-label':a+': '+n.title,style:'--node-color:'+c+';--node-bg:'+bg});
+    if(n.decision)g.append(el('polygon',{points:`${n.x-170},${n.y} ${n.x-118},${n.y-65} ${n.x+118},${n.y-65} ${n.x+170},${n.y} ${n.x+118},${n.y+65} ${n.x-118},${n.y+65}`}));
+    else g.append(el('rect',{x:n.x-165,y:n.y-55,width:330,height:110,rx:9}));
+    g.append(el('text',{x:n.x,y:n.y-26,'text-anchor':'middle',class:'owner'},a));g.append(el('text',{x:n.x,y:n.y+2,'text-anchor':'middle',class:'title'},n.title));g.append(el('text',{x:n.x,y:n.y+29,'text-anchor':'middle',class:'sub'},n.sub));
+    g.addEventListener('click',()=>selectNode(n));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectNode(n);}});svg.append(g);n.element=g;
+  }
+  function selectNode(n){for(const node of nodes)node.element.classList.toggle('selected',node===n);const[a,c]=actors[n.actor];document.getElementById('detailOwner').textContent=a;document.getElementById('detailOwner').style.color=c;document.getElementById('detailTitle').textContent=n.title;document.getElementById('detailText').textContent=n.text;const api=document.getElementById('detailApi');api.replaceChildren();if(n.api){const code=document.createElement('code');code.className='api';code.textContent=n.api;api.append(code);} }
+  document.querySelectorAll('[data-scenario]').forEach(button=>button.addEventListener('click',()=>{const key=button.dataset.scenario;document.querySelectorAll('[data-scenario]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));const set=routes[key];for(const n of nodes)n.element.classList.toggle('dim',!!set&&!set.has(n.id));for(const e of edges){const dim=!!set&&(!set.has(e.from)||!set.has(e.to));e.element.classList.toggle('dim',dim);if(e.labelElement)e.labelElement.classList.toggle('dim',dim);}if(key!=='all')selectNode(nodes.find(n=>n.id===({normal:'confirm',auto:'auto',refund:'ruling'}[key])));}));
+  let zoom=100;
+  function setZoom(value){zoom=Math.max(50,Math.min(200,value));svg.style.width=zoom+'%';svg.style.minWidth=zoom===100?'850px':(850*zoom/100)+'px';document.getElementById('zoomValue').textContent=zoom+'%';}
+  document.getElementById('zoomIn').addEventListener('click',()=>setZoom(zoom+20));document.getElementById('zoomOut').addEventListener('click',()=>setZoom(zoom-20));
+  document.getElementById('fit').addEventListener('click',()=>{zoom=100;svg.style.width='100%';svg.style.minWidth='0';document.getElementById('zoomValue').textContent='Vừa';});
+  document.getElementById('print').addEventListener('click',()=>window.print());
+  document.getElementById('saveSvg').addEventListener('click',()=>{const clone=svg.cloneNode(true);clone.setAttribute('width','1400');clone.setAttribute('height','2610');clone.removeAttribute('style');clone.querySelectorAll('.dim,.selected').forEach(e=>e.classList.remove('dim','selected'));const style=el('style');style.textContent=Array.from(document.styleSheets[0].cssRules).map(r=>r.cssText).join('\n');clone.insertBefore(style,clone.firstChild);const blob=new Blob([new XMLSerializer().serializeToString(clone)],{type:'image/svg+xml;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='TakeTwo-flow-mua-ban.svg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+})();
+</script>
+</body>
+</html>

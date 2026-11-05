@@ -2,15 +2,56 @@ const { DatabaseSync } = require('node:sqlite');
 const path = require('node:path');
 const os = require('node:os');
 const bcrypt = require('bcryptjs');
+const fs = require('node:fs');
+const config = require('./config');
 
 // In serverless environments (Vercel / Lambda), filesystem is read-only except /tmp
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 const dbDir = isServerless ? os.tmpdir() : __dirname;
-const dbPath = path.join(dbDir, 'taketwo.db');
+const dbPath = process.env.TAKETWO_DB_PATH || path.join(dbDir, 'taketwo.db');
+if (dbPath !== ':memory:') fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new DatabaseSync(dbPath);
 
 // Enable WAL mode & foreign keys
 db.exec('PRAGMA foreign_keys = ON;');
+db.exec('PRAGMA busy_timeout = 5000;');
+
+function backupDatabase() {
+  if (dbPath === ':memory:' || !fs.existsSync(dbPath) || fs.statSync(dbPath).size === 0) return null;
+  const folder = path.join(path.dirname(dbPath), 'backups');
+  fs.mkdirSync(folder, { recursive: true });
+  const destination = path.join(folder, `taketwo-${new Date().toISOString().replace(/[:.]/g, '-')}-${require('node:crypto').randomUUID()}.db`);
+  db.exec(`VACUUM INTO '${destination.replace(/'/g, "''")}'`);
+  return destination;
+}
+
+function ensureApplicationTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS platform_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(order_id, type)
+    );
+    CREATE TABLE IF NOT EXISTS favorites (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY(user_id, product_id)
+    );
+    CREATE INDEX IF NOT EXISTS orders_auto_confirm ON orders(status, escrow_status, auto_confirm_deadline);
+    CREATE INDEX IF NOT EXISTS ledger_wallet ON wallet_transactions(wallet_id, id);
+    CREATE INDEX IF NOT EXISTS idx_chat_conv ON chat_conversations(product_id, buyer_id, seller_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_msg ON chat_messages(conversation_id, id);
+    CREATE INDEX IF NOT EXISTS idx_disputes_order ON disputes(order_id);
+    CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments(order_id);
+    CREATE INDEX IF NOT EXISTS idx_voucher_code ON voucher_campaigns(code);
+  `);
+  const statement = db.prepare('UPDATE bump_packages SET price = ?, bump_credits = ? WHERE id = ?');
+  for (const pkg of config.packages) statement.run(pkg.price, pkg.credits, pkg.id);
+}
 
 function createTablesIfNotExists() {
   db.exec(`
@@ -28,6 +69,9 @@ function createTablesIfNotExists() {
       co2_saved_kg REAL DEFAULT 0.0,
       avatar_url TEXT,
       bonus_claimed INTEGER DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'ACTIVE',
+      lock_reason TEXT,
+      warning_count INTEGER DEFAULT 0,
       created_at TEXT NOT NULL
     );
 
@@ -56,9 +100,12 @@ function createTablesIfNotExists() {
       condition_level TEXT NOT NULL,
       defect_note TEXT,
       campus_cluster TEXT NOT NULL,
-      meetup_location TEXT NOT NULL,
+      meetup_location TEXT NOT NULL DEFAULT '',
       image_url TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'AVAILABLE',
+      approval_status TEXT NOT NULL DEFAULT 'APPROVED',
+      approved_by INTEGER,
+      rejection_reason TEXT,
       is_promoted INTEGER DEFAULT 0,
       promoted_badge TEXT,
       promoted_until TEXT,
@@ -129,6 +176,17 @@ function createTablesIfNotExists() {
       shipped_at TEXT,
       auto_confirm_deadline TEXT,
       dispute_reason TEXT,
+      voucher_code TEXT,
+      pricing_version TEXT DEFAULT 'v2_net_seller',
+      seller_payout INTEGER DEFAULT 0,
+      platform_fee INTEGER DEFAULT 0,
+      refund_amount INTEGER DEFAULT 0,
+      retained_fee INTEGER DEFAULT 0,
+      shipping_cost_incurred INTEGER DEFAULT 0,
+      pickup_address TEXT,
+      admin_resolved_at TEXT,
+      admin_resolver_id INTEGER,
+      admin_resolution_reason TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (product_id) REFERENCES products(id),
@@ -147,13 +205,139 @@ function createTablesIfNotExists() {
       FOREIGN KEY (product_id) REFERENCES products(id),
       FOREIGN KEY (sender_id) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS voucher_campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      discount_type TEXT NOT NULL CHECK(discount_type IN ('FIXED', 'PERCENTAGE')),
+      discount_value INTEGER NOT NULL,
+      max_discount INTEGER,
+      min_spend INTEGER NOT NULL DEFAULT 0,
+      start_date TEXT,
+      end_date TEXT,
+      target_audience TEXT DEFAULT 'ALL' CHECK(target_audience IN ('ALL', 'NEW_BUYER', 'CAMPUS_HOALAC', 'SPECIFIC_USERS')),
+      target_user_ids TEXT,
+      budget INTEGER NOT NULL,
+      budget_used INTEGER NOT NULL DEFAULT 0,
+      budget_held INTEGER NOT NULL DEFAULT 0,
+      usage_limit INTEGER NOT NULL DEFAULT 100,
+      usage_per_user INTEGER NOT NULL DEFAULT 1,
+      usage_count INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS voucher_usages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      voucher_id INTEGER NOT NULL REFERENCES voucher_campaigns(id),
+      order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      discount_amount INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'HELD' CHECK(status IN ('HELD', 'COMMITTED', 'RELEASED')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS shipments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER UNIQUE NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      tracking_code TEXT UNIQUE NOT NULL,
+      pickup_address TEXT,
+      delivery_address TEXT,
+      fee_charged INTEGER NOT NULL DEFAULT 0,
+      fee_payable INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'PENDING_PICKUP' CHECK(status IN ('PENDING_PICKUP', 'PICKED_UP', 'DELIVERING', 'DELIVERED', 'CANCELLED')),
+      payable_status TEXT NOT NULL DEFAULT 'PENDING' CHECK(payable_status IN ('PENDING', 'PAID')),
+      payable_paid_at TEXT,
+      payable_reference TEXT,
+      picked_up_at TEXT,
+      delivered_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS disputes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER UNIQUE NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      opened_by INTEGER NOT NULL REFERENCES users(id),
+      issue_type TEXT NOT NULL CHECK(issue_type IN ('NOT_RECEIVED', 'WRONG_ITEM', 'NOT_AS_DESCRIBED', 'DAMAGED', 'SELLER_NO_SHOW', 'OTHER')),
+      description TEXT NOT NULL,
+      evidence_images TEXT,
+      status TEXT NOT NULL DEFAULT 'OPEN' CHECK(status IN ('OPEN', 'UNDER_REVIEW', 'RESOLVED')),
+      seller_response TEXT,
+      seller_evidence TEXT,
+      seller_responded_at TEXT,
+      admin_reviewed INTEGER DEFAULT 0,
+      admin_decision TEXT CHECK(admin_decision IN ('RELEASE_SELLER', 'REFUND_BUYER', NULL)),
+      admin_reason TEXT,
+      resolved_by INTEGER REFERENCES users(id),
+      resolved_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      buyer_id INTEGER NOT NULL REFERENCES users(id),
+      seller_id INTEGER NOT NULL REFERENCES users(id),
+      last_message_at TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(product_id, buyer_id, seller_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL REFERENCES chat_conversations(id) ON DELETE CASCADE,
+      sender_id INTEGER NOT NULL REFERENCES users(id),
+      content TEXT NOT NULL,
+      attachment_id TEXT,
+      attachment_url TEXT,
+      is_read INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS listing_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      reported_by INTEGER NOT NULL REFERENCES users(id),
+      reason TEXT NOT NULL,
+      description TEXT,
+      status TEXT DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'REVIEWED', 'DISMISSED')),
+      resolution_action TEXT,
+      resolved_at TEXT,
+      resolved_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor_id INTEGER REFERENCES users(id),
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT,
+      reason TEXT,
+      metadata TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS attachments (
+      id TEXT PRIMARY KEY,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      file_path TEXT NOT NULL,
+      uploaded_by INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL
+    );
   `);
 }
 
 function ensureSchemaMigrations() {
   createTablesIfNotExists();
 
-  // Helper to check if column exists
   const hasColumn = (table, col) => {
     try {
       const info = db.prepare(`PRAGMA table_info(${table})`).all();
@@ -168,29 +352,61 @@ function ensureSchemaMigrations() {
     db.exec('ALTER TABLE wallets ADD COLUMN boost_credits INTEGER NOT NULL DEFAULT 0;');
   }
 
-  // 2. Orders table recipient_name & recipient_phone
-  if (!hasColumn('orders', 'recipient_name')) {
-    db.exec('ALTER TABLE orders ADD COLUMN recipient_name TEXT;');
-  }
-  if (!hasColumn('orders', 'recipient_phone')) {
-    db.exec('ALTER TABLE orders ADD COLUMN recipient_phone TEXT;');
-  }
+  // 2. Orders table columns
+  if (!hasColumn('orders', 'recipient_name')) db.exec('ALTER TABLE orders ADD COLUMN recipient_name TEXT;');
+  if (!hasColumn('orders', 'recipient_phone')) db.exec('ALTER TABLE orders ADD COLUMN recipient_phone TEXT;');
+  if (!hasColumn('orders', 'voucher_code')) db.exec('ALTER TABLE orders ADD COLUMN voucher_code TEXT;');
+  if (!hasColumn('orders', 'pricing_version')) db.exec("ALTER TABLE orders ADD COLUMN pricing_version TEXT DEFAULT 'v2_net_seller';");
+  if (!hasColumn('orders', 'seller_payout')) db.exec('ALTER TABLE orders ADD COLUMN seller_payout INTEGER DEFAULT 0;');
+  if (!hasColumn('orders', 'platform_fee')) db.exec('ALTER TABLE orders ADD COLUMN platform_fee INTEGER DEFAULT 0;');
+  if (!hasColumn('orders', 'refund_amount')) db.exec('ALTER TABLE orders ADD COLUMN refund_amount INTEGER DEFAULT 0;');
+  if (!hasColumn('orders', 'retained_fee')) db.exec('ALTER TABLE orders ADD COLUMN retained_fee INTEGER DEFAULT 0;');
+  if (!hasColumn('orders', 'shipping_cost_incurred')) db.exec('ALTER TABLE orders ADD COLUMN shipping_cost_incurred INTEGER DEFAULT 0;');
+  if (!hasColumn('orders', 'pickup_address')) db.exec('ALTER TABLE orders ADD COLUMN pickup_address TEXT;');
+  if (!hasColumn('orders', 'admin_resolved_at')) db.exec('ALTER TABLE orders ADD COLUMN admin_resolved_at TEXT;');
+  if (!hasColumn('orders', 'admin_resolver_id')) db.exec('ALTER TABLE orders ADD COLUMN admin_resolver_id INTEGER;');
+  if (!hasColumn('orders', 'admin_resolution_reason')) db.exec('ALTER TABLE orders ADD COLUMN admin_resolution_reason TEXT;');
 
-  // 3. Products table promoted_badge & bump_count
-  if (!hasColumn('products', 'promoted_badge')) {
-    db.exec('ALTER TABLE products ADD COLUMN promoted_badge TEXT;');
-  }
-  if (!hasColumn('products', 'bump_count')) {
-    db.exec('ALTER TABLE products ADD COLUMN bump_count INTEGER DEFAULT 0;');
-  }
+  // 3. Products table columns
+  if (!hasColumn('products', 'promoted_badge')) db.exec('ALTER TABLE products ADD COLUMN promoted_badge TEXT;');
+  if (!hasColumn('products', 'bump_count')) db.exec('ALTER TABLE products ADD COLUMN bump_count INTEGER DEFAULT 0;');
+  if (!hasColumn('products', 'approval_status')) db.exec("ALTER TABLE products ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'APPROVED';");
+  if (!hasColumn('products', 'approved_by')) db.exec('ALTER TABLE products ADD COLUMN approved_by INTEGER;');
+  if (!hasColumn('products', 'rejection_reason')) db.exec('ALTER TABLE products ADD COLUMN rejection_reason TEXT;');
 
-  // 4. Users table password & bonus_claimed
-  if (!hasColumn('users', 'password')) {
-    db.exec("ALTER TABLE users ADD COLUMN password TEXT NOT NULL DEFAULT '';");
-  }
-  if (!hasColumn('users', 'bonus_claimed')) {
-    db.exec("ALTER TABLE users ADD COLUMN bonus_claimed INTEGER DEFAULT 1;");
-  }
+  // 4. Users table columns
+  if (!hasColumn('users', 'password')) db.exec("ALTER TABLE users ADD COLUMN password TEXT NOT NULL DEFAULT '';");
+  if (!hasColumn('users', 'bonus_claimed')) db.exec('ALTER TABLE users ADD COLUMN bonus_claimed INTEGER DEFAULT 1;');
+  if (!hasColumn('users', 'status')) db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE';");
+  if (!hasColumn('users', 'lock_reason')) db.exec('ALTER TABLE users ADD COLUMN lock_reason TEXT;');
+  if (!hasColumn('users', 'warning_count')) db.exec('ALTER TABLE users ADD COLUMN warning_count INTEGER DEFAULT 0;');
+  if (!hasColumn('users', 'verification_status')) db.exec("ALTER TABLE users ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'UNVERIFIED';");
+
+  if (!hasColumn('chat_messages', 'client_id')) db.exec('ALTER TABLE chat_messages ADD COLUMN client_id TEXT;');
+  if (!hasColumn('disputes', 'original_deadline')) db.exec('ALTER TABLE disputes ADD COLUMN original_deadline TEXT;');
+  if (!hasColumn('disputes', 'reviewed_by')) db.exec('ALTER TABLE disputes ADD COLUMN reviewed_by INTEGER;');
+  if (!hasColumn('disputes', 'stage')) db.exec("ALTER TABLE disputes ADD COLUMN stage TEXT NOT NULL DEFAULT 'WAITING_SELLER';");
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS chat_message_retry ON chat_messages(conversation_id, sender_id, client_id);
+    CREATE TABLE IF NOT EXISTS dispute_posts (
+      id INTEGER PRIMARY KEY, dispute_id INTEGER NOT NULL REFERENCES disputes(id),
+      author_id INTEGER NOT NULL REFERENCES users(id), content TEXT NOT NULL,
+      attachment_ids TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS journals (
+      id TEXT PRIMARY KEY, event_key TEXT NOT NULL UNIQUE,
+      order_id INTEGER REFERENCES orders(id), created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS mutation_keys (
+      user_id INTEGER NOT NULL REFERENCES users(id), key TEXT NOT NULL,
+      fingerprint TEXT NOT NULL, response TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY(user_id, key)
+    );
+    CREATE TABLE IF NOT EXISTS journal_lines (
+      id INTEGER PRIMARY KEY, journal_id TEXT NOT NULL REFERENCES journals(id),
+      account TEXT NOT NULL, owner TEXT NOT NULL, amount INTEGER NOT NULL
+    );
+  `);
 
   // Ensure otp_codes table exists
   db.exec(`
@@ -219,6 +435,21 @@ function ensureSchemaMigrations() {
 
 function dropAndCreateTables() {
   db.exec(`
+    DROP TABLE IF EXISTS journal_lines;
+    DROP TABLE IF EXISTS mutation_keys;
+    DROP TABLE IF EXISTS journals;
+    DROP TABLE IF EXISTS dispute_posts;
+    DROP TABLE IF EXISTS attachments;
+    DROP TABLE IF EXISTS audit_logs;
+    DROP TABLE IF EXISTS listing_reports;
+    DROP TABLE IF EXISTS chat_messages;
+    DROP TABLE IF EXISTS chat_conversations;
+    DROP TABLE IF EXISTS disputes;
+    DROP TABLE IF EXISTS shipments;
+    DROP TABLE IF EXISTS voucher_usages;
+    DROP TABLE IF EXISTS voucher_campaigns;
+    DROP TABLE IF EXISTS favorites;
+    DROP TABLE IF EXISTS platform_entries;
     DROP TABLE IF EXISTS otp_codes;
     DROP TABLE IF EXISTS wallet_transactions;
     DROP TABLE IF EXISTS orders;
@@ -233,17 +464,23 @@ function dropAndCreateTables() {
 }
 
 function initDatabase(forceReseed = false) {
-  ensureSchemaMigrations();
-  const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='products'").get();
-  if (!tableCheck) {
-    dropAndCreateTables();
-    seedAllData();
-  } else {
-    const prodCount = db.prepare('SELECT COUNT(*) as count FROM products').get().count;
-    if (prodCount === 0 || forceReseed) {
-      seedAllData();
-    }
+  const version = db.prepare('PRAGMA user_version').get().user_version;
+  if (version < 2) {
+    const saved = backupDatabase();
+    if (saved) console.log(`Database backup before migration: ${saved}`);
   }
+  ensureSchemaMigrations();
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  if (forceReseed || userCount === 0) seedAllData();
+  ensureSchemaMigrations();
+  ensureApplicationTables();
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (version < 2) db.prepare("UPDATE orders SET pricing_version = 'legacy' WHERE escrow_status != 'HELD'").run();
+    require('./services/migrate-active')(db);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  db.exec('PRAGMA user_version = 2;');
 }
 
 function seedAllData() {
@@ -262,8 +499,8 @@ function seedAllData() {
 
   // 2. Users (4 Users: Buyer, Seller, Student, Admin)
   const insertUser = db.prepare(`
-    INSERT INTO users (id, name, email, password, role, campus, student_code, rating_avg, review_count, eco_points, co2_saved_kg, avatar_url, bonus_claimed, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now', ?))
+    INSERT INTO users (id, name, email, password, role, campus, student_code, rating_avg, review_count, eco_points, co2_saved_kg, avatar_url, bonus_claimed, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'ACTIVE', datetime('now', ?))
   `);
 
   const studentHashedPassword = bcrypt.hashSync('Student@123', 10);
@@ -279,22 +516,21 @@ function seedAllData() {
   insertWallet.run(1, 250000, 55000, 2);   // Tuấn (Buyer - 2 lượt đẩy VIP)
   insertWallet.run(2, 680000, 0, 5);       // Minh Anh (Seller - 5 lượt)
   insertWallet.run(3, 195000, 0, 1);       // Long (Seller - 1 lượt)
-  insertWallet.run(4, 30250000, 55000, 99);// Admin (Cash reserve pool)
+  insertWallet.run(4, 0, 0, 99);          // Admin is platform steward
 
-  // 4. Bump Packages (3 gói chuẩn hóa theo Kinh tế học hành vi: Lẻ 15k / Tiết kiệm 49k / VIP 79k)
+  // 4. Bump Packages
   const insertBump = db.prepare('INSERT INTO bump_packages (id, name, bump_credits, price, tag, description, has_badge_hot, validity_days) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   insertBump.run('bump_single', 'Gói Lẻ (Cơ bản)', 1, 15000, 'Mức giá neo', '15.000đ / 1 lượt đẩy bài lên đầu danh mục. Hiệu lực 30 ngày.', 0, 30);
   insertBump.run('bump_saver', 'Gói Sinh Viên Tiết Kiệm', 5, 49000, '⭐ Phổ biến nhất - Tiết kiệm 35%', '49.000đ / 5 lượt đăng & đẩy bài (Chỉ 9.8k/lượt, tiết kiệm 26.000đ).', 0, 30);
   insertBump.run('bump_vip', 'Gói Xả Đồ Ra Trường (VIP)', 10, 79000, '👑 Siêu hời - Pass nhanh x3', '79.000đ / 10 lượt đẩy + Tặng Huy hiệu "🔥 Đẩy Top" độc quyền.', 1, 60);
 
-  // 5. 8 Realistic Student Products Across 4 Categories
+  // 5. Products
   const insertProduct = db.prepare(`
     INSERT INTO products (
       seller_id, category_id, title, price, original_price, condition_level, defect_note,
-      campus_cluster, meetup_location, image_url, status, is_promoted, promoted_badge, bump_count, view_count, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
+      campus_cluster, meetup_location, image_url, status, approval_status, is_promoted, promoted_badge, bump_count, view_count, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'APPROVED', ?, ?, ?, ?, datetime('now', ?))
   `);
-
   const productData = [
     // ==================== 1. BOOKS & EDUCATION (GIÁO TRÌNH & HỌC TẬP - 13 SP) ====================
     [2, 'books', 'Giáo trình Triết học Mác - Lênin & Tư tưởng Hồ Chí Minh (Bộ 2 cuốn)', 45000, 140000, 'Như mới 99%', 'Sách mới tinh chỉ highlight 2 trang đầu, không rách gáy.', 'Hòa Lạc', 'Sảnh Trống Đồng, KTX Dom A - ĐH FPT', 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&w=600&q=80', 'RESERVED', 1, 'HOT', 3, 148, '-2 days'],
@@ -359,18 +595,21 @@ function seedAllData() {
     insertProduct.run(...item);
   }
 
+
   // 6. Active Escrow Order with 5-Day SLA Countdown
   const insertOrder = db.prepare(`
     INSERT INTO orders (
       order_code, product_id, buyer_id, seller_id, amount, shipping_fee, discount, total_paid,
       delivery_type, delivery_address, recipient_name, recipient_phone, tracking_code,
       payment_method, status, escrow_status, buyer_confirmed, seller_confirmed,
-      shipped_at, auto_confirm_deadline, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '-1 days'), datetime('now'))
+      shipped_at, auto_confirm_deadline, voucher_code, pricing_version, seller_payout, platform_fee, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'v2_net_seller', ?, ?, datetime('now', '-1 days'), datetime('now'))
   `);
 
   const shippedDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const deadlineDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
+  const seedCommission = Math.round(45000 * config.commission_rate);
+  const seedSellerPayout = 45000 - seedCommission;
 
   insertOrder.run(
     'TK-20261102-01',
@@ -392,10 +631,35 @@ function seedAllData() {
     0,
     1,
     shippedDate,
-    deadlineDate
+    deadlineDate,
+    'SV5K',
+    seedSellerPayout,
+    seedCommission
   );
 
-  // 7. TakeTwo Wallet Transactions (Sổ Quỹ Thu Chi Mẫu)
+  // 7. Seed Vouchers
+  const insertVoucher = db.prepare(`
+    INSERT INTO voucher_campaigns (code, title, description, discount_type, discount_value, max_discount, min_spend, start_date, end_date, target_audience, budget, budget_used, budget_held, usage_limit, usage_per_user, is_active, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '-10 days'))
+  `);
+  insertVoucher.run('SV5K', 'Ưu Đãi Sinh Viên 5.000đ', 'Giảm 5.000đ trực tiếp vào giá hàng sinh viên', 'FIXED', 5000, 5000, 0, '2026-01-01', '2026-12-31', 'ALL', 5000000, 0, 5000, 1000, 5, 1);
+  db.prepare("INSERT INTO voucher_usages (voucher_id,order_id,user_id,discount_amount,status,created_at,updated_at) SELECT v.id,o.id,o.buyer_id,o.discount,'HELD',datetime('now'),datetime('now') FROM orders o JOIN voucher_campaigns v ON v.code = o.voucher_code WHERE o.escrow_status = 'HELD'").run();
+  insertVoucher.run('WELCOME10', 'Chào Bạn Mới - Giảm 10%', 'Giảm 10% tối đa 20.000đ cho đơn hàng đầu tiên', 'PERCENTAGE', 10, 20000, 40000, '2026-01-01', '2026-12-31', 'NEW_BUYER', 2000000, 0, 0, 500, 1, 1);
+  insertVoucher.run('HOALACFREE', 'Miễn Phí Ship Hòa Lạc', 'Giảm 15.000đ cước giao nhận tại khu đô thị Hòa Lạc', 'FIXED', 15000, 15000, 50000, '2026-01-01', '2026-12-31', 'CAMPUS_HOALAC', 3000000, 0, 0, 200, 2, 1);
+
+  // Seed Voucher Usage for Order 1
+  db.prepare(`
+    INSERT INTO voucher_usages (voucher_id, order_id, user_id, discount_amount, status, created_at, updated_at)
+    VALUES (1, 1, 1, 5000, 'HELD', datetime('now', '-1 days'), datetime('now'))
+  `).run();
+
+  // 8. Seed Shipment for Order 1
+  db.prepare(`
+    INSERT INTO shipments (order_id, tracking_code, pickup_address, delivery_address, fee_charged, fee_payable, status, payable_status, picked_up_at, created_at, updated_at)
+    VALUES (1, 'TK-DLV-88219', 'Sảnh Trống Đồng, KTX Dom A - ĐH FPT', 'Phòng 304, KTX Dom E, ĐHQG Hòa Lạc', 15000, 15000, 'DELIVERING', 'PENDING', datetime('now', '-1 days'), datetime('now', '-1 days'), datetime('now'))
+  `).run();
+
+  // 9. TakeTwo Wallet Transactions (Sổ Quỹ Thu Chi Mẫu)
   const insertTx = db.prepare(`
     INSERT INTO wallet_transactions (wallet_id, type, flow_type, voucher_code, payment_method, amount, balance_before, balance_after, reference_id, description, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
@@ -407,11 +671,14 @@ function seedAllData() {
   insertTx.run(2, 'BUY_BOOST', 'OUT', 'PC-20261031-04', 'Ví TakeTwo', -49000, 729000, 680000, 'bump_saver', 'Mua Gói Sinh Viên Tiết Kiệm (+5 lượt đẩy bài VIP)', '-2 days');
 
   db.exec('PRAGMA foreign_keys = ON;');
+  ensureApplicationTables();
   console.log(`Database seeded with ${productData.length} realistic student products and full TakeTwo Wallet transactions!`);
 }
 
 module.exports = {
   db,
+  dbPath,
+  backupDatabase,
   initDatabase,
   seedAllData
 };
