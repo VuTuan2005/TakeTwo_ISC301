@@ -5,12 +5,23 @@ const fs = require('node:fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const cookieParser = require('cookie-parser');
-const { db, initDatabase } = require('./db');
+const { db, dbPath, initDatabase } = require('./db');
 const config = require('./config');
 const { createMarketplace, BusinessError, money, code } = require('./services/marketplace');
 
 // Environment & Security Configurations
-const JWT_SECRET = process.env.JWT_SECRET || require('node:crypto').randomBytes(32).toString('hex');
+function sessionSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  const generated = require('node:crypto').randomBytes(32).toString('hex');
+  if (dbPath === ':memory:') return generated;
+  const filename = `${dbPath}.session-secret`;
+  try { fs.writeFileSync(filename, generated, { encoding: 'utf8', flag: 'wx', mode: 0o600 }); }
+  catch (error) { if (error.code !== 'EEXIST') throw error; }
+  const value = fs.readFileSync(filename, 'utf8').trim();
+  if (!/^[0-9a-f]{64}$/i.test(value)) throw new Error('Khóa phiên local không hợp lệ. Kiểm tra file khóa hoặc đặt JWT_SECRET.');
+  return value;
+}
+const JWT_SECRET = sessionSecret();
 const DEMO_MODE = process.env.DEMO_MODE !== 'false'; // Defaults to true for university demo
 const ALLOWED_CAMPUS_DOMAINS = [
   'fpt.edu.vn', 'fe.edu.vn', 'vnu.edu.vn', 'hust.edu.vn',

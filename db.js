@@ -465,7 +465,7 @@ function dropAndCreateTables() {
 
 function initDatabase(forceReseed = false) {
   const version = db.prepare('PRAGMA user_version').get().user_version;
-  if (version < 2) {
+  if (version < 3) {
     const saved = backupDatabase();
     if (saved) console.log(`Database backup before migration: ${saved}`);
   }
@@ -477,10 +477,31 @@ function initDatabase(forceReseed = false) {
   db.exec('BEGIN IMMEDIATE');
   try {
     if (version < 2) db.prepare("UPDATE orders SET pricing_version = 'legacy' WHERE escrow_status != 'HELD'").run();
+    if (version < 3) {
+      const oldTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'platform_entries'").get();
+      if (oldTable && /\bCHECK\s*\(/i.test(oldTable.sql)) {
+        const triggers = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'platform_entries' AND sql IS NOT NULL").all();
+        db.exec(`
+          CREATE TABLE platform_entries_v3 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+            type TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(order_id, type)
+          );
+          INSERT INTO platform_entries_v3 (id, order_id, type, amount, created_at)
+            SELECT id, order_id, type, amount, created_at FROM platform_entries;
+          DROP TABLE platform_entries;
+          ALTER TABLE platform_entries_v3 RENAME TO platform_entries;
+        `);
+        for (const trigger of triggers) db.exec(trigger.sql);
+      }
+    }
     require('./services/migrate-active')(db);
+    db.exec('PRAGMA user_version = 3;');
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
-  db.exec('PRAGMA user_version = 2;');
 }
 
 function seedAllData() {

@@ -505,7 +505,7 @@
         <tr>
           <td>${u.id}</td>
           <td><strong>${u.name}</strong><br><small>${u.email}</small></td>
-          <td>${u.role}</td>
+          <td>${u.role === 'ADMIN' ? 'Quản trị viên' : 'Thành viên'}</td>
           <td>${u.campus || ''}<br><small>${u.verification_status || 'UNVERIFIED'}</small>${u.role !== 'ADMIN' ? `<button class="btn btn-outline btn-sm" onclick="verifyStudent(${u.id})">Kiểm tra email</button>` : ''}</td>
           <td><span class="status-badge ${u.status === 'ACTIVE' ? 'badge-success' : 'badge-danger'}">${u.status}</span></td>
           <td>${u.warning_count || 0}</td>

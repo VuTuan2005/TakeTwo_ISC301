@@ -164,6 +164,45 @@ test('safe user response, private ledgers, and idempotent account-scoped favorit
   assert.equal((await request('/api/favorites', 3, null, 'GET')).body.length, 0);
   for (let i = 0; i < 2; i++) assert.equal((await request(`/api/favorites/${id}`, 1, {}, 'DELETE')).status, 200);
 });
+test('transaction ledger filters receipts by type and never exposes another account', async () => {
+  const all = await request('/api/transactions', 1, null, 'GET');
+  assert.equal(all.status, 200);
+  assert.ok(all.body.transactions.length > 0);
+  assert.ok(all.body.transactions.every(t => t.user_id === 1));
+  for (const [type, flow] of [['deposit', 'IN'], ['payment', 'OUT'], ['escrow', 'HOLD']]) {
+    const result = await request(`/api/transactions?type=${type}`, 1, null, 'GET');
+    assert.equal(result.status, 200);
+    assert.ok(result.body.transactions.every(t => t.flow_type === flow && t.user_id === 1));
+  }
+  const empty = await request('/api/transactions?search=NOT_A_RECEIPT_898989', 1, null, 'GET');
+  assert.deepEqual(empty.body.transactions, []);
+});
+test('one newly registered member can create a listing and buy another member’s listing', async () => {
+  const email = 'both-actions@fpt.edu.vn';
+  const sent = await request('/api/auth/send-otp', null, { email });
+  assert.equal(sent.status, 200);
+  const registered = await fetch(base + '/api/auth/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, name: 'Member', password: 'Student@123', otp: sent.body.simulated_otp })
+  });
+  assert.equal(registered.status, 200);
+  const cookie = registered.headers.get('set-cookie').split(';')[0];
+  const result = await registered.json();
+  const post = async (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify(body) });
+  const listing = await post('/api/products', { title: 'Đồ của thành viên', category_id: 'books', price: 15000, condition_level: 'Tốt', campus_cluster: 'Hòa Lạc' });
+  assert.equal(listing.status, 200);
+  const own = await listing.json();
+  const ownPurchase = await post('/api/orders/checkout', { product_id: own.product_id, delivery_type: 'CAMPUS_MEETUP', delivery_address: 'Cổng' });
+  assert.equal(ownPurchase.status, 400);
+  const purchase = await post('/api/orders/checkout', { product_id: product(20000), delivery_type: 'CAMPUS_MEETUP', delivery_address: 'Cổng' });
+  assert.equal(purchase.status, 200);
+  const orderId = (await purchase.json()).order_id;
+  assert.equal(order(orderId).buyer_id, result.user.id);
+  assert.equal(db.prepare('SELECT seller_id FROM products WHERE id = ?').get(own.product_id).seller_id, result.user.id);
+  const existingSeller = await request('/api/orders/checkout', 3, { product_id: product(20000), delivery_type: 'CAMPUS_MEETUP', delivery_address: 'Cổng' });
+  assert.equal(existingSeller.status, 200);
+  assert.equal(order(existingSeller.body.order_id).buyer_id, 3);
+});
 test('active-order listing cannot be removed; completed listing is soft-hidden', async () => {
   const id = checkout(5000), pid = order(id).product_id;
   assert.equal((await request(`/api/products/${pid}/delete`, 2)).status, 409);

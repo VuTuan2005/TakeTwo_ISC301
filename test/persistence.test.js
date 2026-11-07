@@ -35,3 +35,29 @@ test('migration backs up existing DB; empty catalog never resets existing users'
     fs.rmSync(resolved, { recursive: true, force: true });
   }
 });
+
+test('migration backs up and preserves old platform entries while allowing courier and refund entries', () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'taketwo-legacy-ledger-'));
+  const filename = path.join(folder, 'legacy.db');
+  const env = { ...process.env, TAKETWO_DB_PATH: filename };
+  const run = expression => {
+    const result = spawnSync(process.execPath, ['-e', expression], { cwd: path.join(__dirname, '..'), env, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  try {
+    run(`const {db,initDatabase}=require('./db');initDatabase();db.exec("DROP TABLE platform_entries; CREATE TABLE platform_entries (id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL REFERENCES orders(id), type TEXT NOT NULL CHECK(type IN ('COMMISSION','VOUCHER_SUBSIDY')), amount INTEGER NOT NULL, created_at TEXT NOT NULL, UNIQUE(order_id,type)); INSERT INTO platform_entries VALUES(42,1,'COMMISSION',1350,'2026-01-01'); PRAGMA user_version=2;");db.close();`);
+    run("const {db,initDatabase}=require('./db');initDatabase();db.close();");
+    const migrated = new DatabaseSync(filename);
+    assert.equal(migrated.prepare('PRAGMA user_version').get().user_version, 3);
+    assert.equal(migrated.prepare('SELECT amount FROM platform_entries WHERE id=42').get().amount, 1350);
+    migrated.prepare("INSERT INTO platform_entries(order_id,type,amount,created_at) VALUES (1,'SHIPPING_PAYABLE',15000,'2026-01-01')").run();
+    migrated.prepare("INSERT INTO platform_entries(order_id,type,amount,created_at) VALUES (1,'RETAINED_FEE',1350,'2026-01-01')").run();
+    migrated.close();
+    assert.equal(fs.readdirSync(path.join(folder, 'backups')).length, 1);
+  } finally {
+    const resolved = path.resolve(folder);
+    assert.equal(path.dirname(resolved), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(resolved).startsWith('taketwo-legacy-ledger-'));
+    fs.rmSync(resolved, { recursive: true, force: true });
+  }
+});

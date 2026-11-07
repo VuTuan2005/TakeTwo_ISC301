@@ -126,11 +126,11 @@ async function sendAuthOtp(type) {
     showToast(data.message, 'success');
 
     // Auto-fill OTP field for demo convenience
-    if (data.demo_otp) {
+    if (data.simulated_otp) {
       if (type === 'login') {
-        $setVal('loginOtpCode', data.demo_otp);
+        $setVal('loginOtpCode', data.simulated_otp);
       } else {
-        $setVal('regOtpCode', data.demo_otp);
+        $setVal('regOtpCode', data.simulated_otp);
       }
     }
 
@@ -195,11 +195,10 @@ async function submitAuthLogin() {
 
     closeModal('modalLogin');
     localStorage.setItem('takeTwo_activeUserId', String(data.user.id));
-    currentUser = data.user;
-    currentWallet = data.wallet;
-    updateRoleNavigation();
+    await loadMe();
+    if (currentUser?.role === 'ADMIN') return;
     await loadFavoriteIds();
-    await renderRoute();
+    if (!(await resumePendingCheckout())) await renderRoute();
     updateHeaderWalletDisplay();
     await loadUsers();
     showToast(data.message, 'success');
@@ -217,7 +216,6 @@ async function submitAuthRegister() {
   const name = $val('regName', '').trim();
   const student_code = $val('regStudentCode', '').trim();
   const email = $val('regEmail', '').trim();
-  const role = $val('regRole', 'BUYER');
   const campus = $val('regCampus', 'Hòa Lạc');
   const password = $val('regPassword', '');
   const otp_code = $val('regOtpCode', '').trim();
@@ -236,7 +234,7 @@ async function submitAuthRegister() {
     const res = await apiFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, student_code, email, role, campus, password, otp_code })
+      body: JSON.stringify({ name, student_code, email, campus, password, otp: otp_code })
     });
     const data = await res.json();
     if (data.error) {
@@ -246,11 +244,10 @@ async function submitAuthRegister() {
 
     closeModal('modalLogin');
     localStorage.setItem('takeTwo_activeUserId', String(data.user.id));
-    currentUser = data.user;
-    currentWallet = data.wallet;
-    updateRoleNavigation();
+    await loadMe();
+    if (currentUser?.role === 'ADMIN') return;
     await loadFavoriteIds();
-    await renderRoute();
+    if (!(await resumePendingCheckout())) await renderRoute();
     updateHeaderWalletDisplay();
     await loadUsers();
     showToast(data.message, 'success');
@@ -290,11 +287,10 @@ async function promptGoogleSSO() {
 
     closeModal('modalLogin');
     localStorage.setItem('takeTwo_activeUserId', String(data.user.id));
-    currentUser = data.user;
-    currentWallet = data.wallet;
-    updateRoleNavigation();
+    await loadMe();
+    if (currentUser?.role === 'ADMIN') return;
     await loadFavoriteIds();
-    await renderRoute();
+    if (!(await resumePendingCheckout())) await renderRoute();
     updateHeaderWalletDisplay();
     await loadUsers();
     showToast(data.message, 'success');
@@ -527,6 +523,7 @@ async function submitDispute() {
 // -------------------------------------------------------------
 async function openCheckoutModal(productId) {
   if (!currentUser) {
+    pendingCheckout = { productId: Number(productId), userId: null };
     showToast('Vui lòng đăng nhập tài khoản sinh viên để đặt mua đồ!', 'info');
     openLoginModal();
     return;
@@ -562,6 +559,7 @@ async function openCheckoutModal(productId) {
     }
 
     await fetchCheckoutQuote();
+    if (!currentUser || !checkoutProduct) return;
     openModal('modalCheckout');
   } catch (err) {
     showToast(err.message || 'Không thể xử lý thao tác. Vui lòng thử lại.', 'error');
@@ -694,15 +692,15 @@ async function submitCheckout() {
     });
 
     const data = await res.json();
-    closeModal('modalCheckout');
-    showToast(`Đặt mua thành công đơn ${data.order_code}! Tiền đã khóa trong Két Escrow bảo vệ 5 ngày.`, 'success');
-    await loadMe();
-    await loadProducts();
-    await loadOrders();
-    await loadTransactionsTable();
-    await loadOverview();
     sessionStorage.removeItem(checkoutDraftKey());
     switchNav(`order/${data.order_id}`);
+    showToast(`Đặt mua thành công đơn ${data.order_code}! Tiền đã khóa trong Két Escrow bảo vệ 5 ngày.`, 'success');
+    try {
+      await loadMe();
+      await loadOrders();
+    } catch (refreshError) {
+      showToast('Đơn đã được tạo. Không tải lại được dữ liệu; mở Đơn hàng và chọn Thử lại.', 'info');
+    }
   } catch (err) {
     showToast(err.message || 'Không thể xử lý thao tác. Vui lòng thử lại.', 'error');
   }

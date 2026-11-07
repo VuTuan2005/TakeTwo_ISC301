@@ -19,6 +19,14 @@ document.addEventListener('error', event => {
 }, true);
 const checkoutFields = ['checkoutRecipientName', 'checkoutRecipientPhone', 'checkoutMeetupInput', 'checkoutDeliveryAddress', 'checkoutVoucherInput'];
 const checkoutDraftKey = () => `taketwo:checkout:${currentUser?.id || 'guest'}`;
+async function resumePendingCheckout() {
+  if (!pendingCheckout || !currentUser || currentUser.role === 'ADMIN') return false;
+  const pending = pendingCheckout;
+  pendingCheckout = null;
+  if (pending.userId === currentUser.id && sessionStorage.getItem(checkoutDraftKey())) await restoreCheckoutDraft();
+  else await openCheckoutModal(pending.productId);
+  return true;
+}
 function saveCheckoutDraft() {
   if (!checkoutProduct || !currentUser) return;
   sessionStorage.setItem(checkoutDraftKey(), JSON.stringify({ product_id: checkoutProduct.id, delivery: document.querySelector('input[name="deliveryType"]:checked')?.value, fields: Object.fromEntries(checkoutFields.map(id => [id, $val(id)])) }));

@@ -24,6 +24,8 @@ Mở http://localhost:3000. Admin đăng nhập được chuyển sang http://lo
 
 Trong chế độ mô phỏng có bộ chọn tài khoản ở sidebar và OTP/mật khẩu tắt `123456`. OTP tạo mới hiện trong biểu mẫu; không gửi email. Kiểm tra email sinh viên ở admin được ghi nhãn local, chưa xác minh với trường.
 
+Một tài khoản thành viên có thể vừa mua vừa đăng bán. Nhãn BUYER/SELLER trên bộ chọn tài khoản mô phỏng chỉ giúp nhận biết kịch bản demo; vai trò trong từng đơn được xác định theo buyer và seller của đơn đó. Tài khoản admin được tách riêng để quản trị.
+
 ## Luồng sử dụng
 
 1. Seller đăng món đồ; điểm hẹn gợi ý **không bắt buộc**. Tin vào hàng chờ duyệt. Seller mở được chi tiết tin vừa đăng bằng ID server trả về.
@@ -73,7 +75,7 @@ npm run db:check
 node scripts/local-browser-check.mjs
 ```
 
-37 kiểm thử service/API gồm quyền, state machine, tranh mua, ngân sách voucher, tiền ship/hoàn sau phí, chống gửi lặp, rollback, ảnh riêng tư, khóa demo và persistence. Browser check tự mở Chrome headless, chạy database riêng trong `scratch/`, kiểm tra luồng mua trực tiếp, vận chuyển/tranh chấp, chat, checkout thiếu tiền, reload và admin ở 1440/768/390px. Ảnh và kết quả được lưu trong thư mục QA riêng, không thay dữ liệu người dùng.
+41 kiểm thử service/API gồm quyền, state machine, tranh mua, ngân sách voucher, tiền ship/hoàn sau phí, chống gửi lặp, rollback, ảnh riêng tư, khóa demo và phiên sau khi khởi động lại. Browser check tự mở Chrome headless, chạy database riêng trong `scratch/`, kiểm tra đăng nhập, đăng ký, sổ giao dịch, luồng mua trực tiếp, vận chuyển/tranh chấp, chat, checkout thiếu tiền, reload và admin ở 1440/768/390px. Ảnh và kết quả được lưu trong thư mục QA riêng, không thay dữ liệu người dùng.
 
 `db:check` chỉ đọc; kiểm tra Escrow từng ví, bút toán và dự trữ voucher nếu có schema mới. Sai lệch chặn quyết toán liên quan; không tự cân số dư để giấu lỗi.
 
@@ -97,7 +99,7 @@ PowerShell: `$env:PORT='3001'` hoặc `$env:DEMO_MODE='false'`; chương trình 
 | PORT / HOST | 3000 / 127.0.0.1 |
 | TAKETWO_DB_PATH | taketwo.db trong dự án |
 | DEMO_MODE | true; false khóa OTP/Google/chuyển tài khoản/nạp-rút/giả lập thời gian |
-| JWT_SECRET | Sinh mỗi lần chạy nếu không đặt; restart yêu cầu đăng nhập lại |
+| JWT_SECRET | Ưu tiên dùng biến môi trường; nếu không đặt, khóa local được tạo cạnh database trong file `*.session-secret` để duy trì phiên sau restart |
 
 `services/marketplace.js`: tiền và trạng thái; `vouchers.js`: quy tắc voucher; `ledger.js`: bút toán; `operations.js`: vận chuyển/hồ sơ/admin; `reports.js`: báo cáo; `migrate-active.js`: bổ sung dữ liệu vận chuyển đang giữ tiền. Frontend dùng `app.js`, `workspace.js`, `plan-ui.js`, và admin riêng `admin.js`.
 

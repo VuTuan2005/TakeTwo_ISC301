@@ -12,6 +12,7 @@ let mutationKeys = new Map();
 let ledgerDebounce;
 let orderPoll;
 let lastModalFocus;
+let pendingCheckout = null;
 const privateRoutes = new Set(['store', 'favorites', 'orders', 'order', 'transactions', 'create', 'checkout', 'chat', 'case']);
 const adminRoutes = new Set(['metrics', 'disputes']);
 const routeTitles = { case: 'Hồ sơ khiếu nại', overview: 'Tổng quan', marketplace: 'Sản phẩm', store: 'Gian hàng của tôi', favorites: 'Yêu thích', product: 'Chi tiết sản phẩm', create: 'Đăng bán', checkout: 'Đặt mua', orders: 'Đơn hàng', order: 'Chi tiết đơn', transactions: 'Ví & Sổ giao dịch', packages: 'Gói đẩy tin', metrics: 'Thống kê mô phỏng', disputes: 'Tranh chấp', chat: 'Tin nhắn' };
@@ -55,8 +56,9 @@ function clearAccountViews(preserveModal = false) {
 }
 
 async function apiFetch(url, options = {}) {
-  if (options.method === 'POST' && ['/api/auth/login', '/api/auth/register', '/api/auth/google'].includes(url)) clearAccountViews(true);
-  const generation = accountGeneration;
+  const changesAccount = options.method === 'POST' && ['/api/auth/login', '/api/auth/register', '/api/auth/google'].includes(url);
+  if (changesAccount) accountGeneration++;
+  let generation = accountGeneration;
   const request = { ...options, credentials: 'same-origin', headers: { ...(options.headers || {}) } };
   if (request.body && typeof request.body === 'object' && !(request.body instanceof FormData)) {
     request.headers['Content-Type'] = 'application/json'; request.body = JSON.stringify(request.body);
@@ -81,12 +83,21 @@ async function apiFetch(url, options = {}) {
       mutationKeys.delete(key);
       const payload = await response.json().catch(() => ({}));
       if (response.status === 401 && !url.includes('/api/auth/')) {
+        if (checkoutProduct && (workspaceRoute === 'checkout' || url === '/api/checkout/quote' || url === '/api/orders/checkout')) {
+          saveCheckoutDraft();
+          pendingCheckout = { productId: checkoutProduct.id, userId: currentUser?.id || null };
+        }
         clearAccountViews();
         if (privateRoutes.has(workspaceRoute.split('/')[0]) || adminRoutes.has(workspaceRoute)) switchNav('marketplace');
+        if (pendingCheckout) openLoginModal();
       }
       const error = new Error(payload.error || 'Không thể xử lý yêu cầu. Vui lòng thử lại.');
       showFormError(error.message);
       throw error;
+    }
+    if (changesAccount) {
+      clearAccountViews(true);
+      generation = accountGeneration;
     }
     const parse = response.json.bind(response);
     mutationKeys.delete(key);
@@ -153,14 +164,16 @@ async function onUserSwitch(id) {
   clearAccountViews();
   try {
     const data = await (await apiFetch('/api/auth/demo-switch', { method: 'POST', body: { user_id: id } })).json();
-    currentUser = data.user; currentWallet = data.wallet || { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
-    updateHeaderWalletDisplay(); updateRoleNavigation(); await loadUsers();
+    await loadMe();
+    if (currentUser?.role === 'ADMIN') return;
+    await loadUsers();
     if (currentUser) await loadFavoriteIds();
-    await renderRoute();
+    if (!(await resumePendingCheckout())) await renderRoute();
     showToast(currentUser ? `Đang dùng ${currentUser.name}` : 'Đã chuyển sang khách.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
 }
 async function handleLogout() {
+  pendingCheckout = null;
   clearAccountViews();
   try { await apiFetch('/api/auth/logout', { method: 'POST' }); localStorage.removeItem('takeTwo_activeUserId'); switchNav('marketplace'); }
   catch (error) { showToast(error.message, 'error'); }
@@ -192,7 +205,7 @@ function updateHeaderWalletDisplay() {
   $id('btnSidebarLogout').hidden = !currentUser;
   $text('btnTopbarAuth', currentUser ? 'Đăng xuất' : 'Đăng nhập');
   $text('sidebarUserName', currentUser?.name || '');
-  $text('sidebarStudentCode', currentUser ? `${currentUser.role} · ${currentUser.student_code || ''}` : '');
+  $text('sidebarStudentCode', currentUser ? (currentUser.student_code || 'Thành viên') : '');
   $text('topupUserCode', currentUser?.student_code || 'DEMO');
   if (currentUser) $id('sidebarUserAvatar').src = currentUser.avatar_url && /^(https?:\/\/|data:image\/)/.test(currentUser.avatar_url) ? currentUser.avatar_url : 'data:,';
 }
@@ -446,12 +459,13 @@ function debounceLedger() { clearTimeout(ledgerDebounce); ledgerDebounce = setTi
 async function loadTransactionsTable() {
   if (!currentUser) return;
   try {
-    const data = await readView('ledger', `/api/transactions?tab=${currentTransactionTab}&search=${encodeURIComponent($val('transactionSearchInput'))}&view_all=${$id('chkViewAllLedger').checked}`);
-    currentTransactionsList = data.items;
-    const incoming = data.items.filter(t => t.flow_type === 'IN').reduce((sum,t) => sum + t.amount, 0);
-    const outgoing = data.items.filter(t => t.flow_type === 'OUT').reduce((sum,t) => sum + Math.abs(t.amount), 0);
+    const data = await readView('ledger', `/api/transactions?type=${encodeURIComponent(currentTransactionTab)}&search=${encodeURIComponent($val('transactionSearchInput'))}&all=${$id('chkViewAllLedger').checked}`);
+    if (!Array.isArray(data.transactions)) throw new Error('Không tải được danh sách giao dịch.');
+    currentTransactionsList = data.transactions;
+    const incoming = data.total_income;
+    const outgoing = data.total_expense;
     $text('stripTotalIncome', `+${formatVND(incoming)}`); $text('stripTotalExpense', `−${formatVND(outgoing)}`);
-    $id('transactionsTableBody').innerHTML = data.items.length ? data.items.map((t, index) => `<tr><td><span class="receipt-code">${E(t.voucher_code)}</span><small>${E(t.created_at)}</small></td><td><strong>${E(t.description)}</strong><small>${E(t.user_name)} · ${E(t.payment_method)}</small></td><td>${E({ IN: 'Thu', OUT: 'Chi', HOLD: 'Tạm giữ' }[t.flow_type])}</td><td class="numeric">${t.amount > 0 ? '+' : ''}${formatVND(t.amount)}</td><td><button class="text-button" onclick="openVoucherReceiptModal(${index})">Chứng từ →</button></td></tr>`).join('') : '<tr><td colspan="5">Không có chứng từ phù hợp.</td></tr>';
+    $id('transactionsTableBody').innerHTML = data.transactions.length ? data.transactions.map((t, index) => `<tr><td><span class="receipt-code">${E(t.voucher_code)}</span><small>${E(t.created_at)}</small></td><td><strong>${E(t.description)}</strong><small>${E(t.user_name)} · ${E(t.payment_method)}</small></td><td>${E({ IN: 'Thu', OUT: 'Chi', HOLD: 'Tạm giữ' }[t.flow_type])}</td><td class="numeric">${t.amount > 0 ? '+' : ''}${formatVND(t.amount)}</td><td><button class="text-button" onclick="openVoucherReceiptModal(${index})">Chứng từ →</button></td></tr>`).join('') : '<tr><td colspan="5">Không có chứng từ phù hợp.</td></tr>';
   } catch (error) {
     if (error.name === 'StaleSessionError' || error.name === 'SupersededRead') return;
     $id('transactionsTableBody').innerHTML = `<tr><td colspan="5">${E(error.message)} <button class="text-button" onclick="loadTransactionsTable()">Thử lại</button></td></tr>`;
