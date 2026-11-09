@@ -384,10 +384,16 @@ function renderOrderDetail(id) {
   // DELIVERING state actions
   if (o.status === 'DELIVERING') {
     if (isBuyer) {
-      actions.push(`<button class="btn-fintab btn-fintab-primary" onclick="buyerConfirmOrder(${id})">Đã nhận & Hài lòng</button>`);
-      actions.push(`<button class="btn-fintab btn-fintab-danger" onclick="openDisputeModal(${id})">Khiếu nại / Hoàn tiền</button>`);
+      if (isMeetup || o.courier_status === 'DELIVERED') {
+        actions.push(`<button class="btn-fintab btn-fintab-primary" onclick="buyerConfirmOrder(${id})">Đã nhận & Hài lòng</button>`);
+        actions.push(`<button class="btn-fintab btn-fintab-danger" onclick="openDisputeModal(${id})">Khiếu nại / Hoàn tiền</button>`);
+      } else {
+        const courierText = o.courier_status === 'PICKED_UP' ? 'Bưu tá đã lấy hàng từ người bán · Đang luân chuyển' : 'Bưu tá đang trên đường giao hàng tới bạn';
+        actions.push(`<span class="state-tag state-DELIVERING">🚚 ${courierText}. Bạn có thể xác nhận hài lòng sau khi bưu tá giao hàng thành công.</span>`);
+        actions.push(`<button class="btn-fintab btn-fintab-danger" onclick="openDisputeModal(${id})">Khiếu nại đơn hàng</button>`);
+      }
     }
-    if (isDemoMode) {
+    if (isDemoMode && (isMeetup || o.courier_status === 'DELIVERED')) {
       actions.push(`<button class="text-button" onclick="simulate5Days(${id})">Mô phỏng hết 5 ngày</button>`);
     }
   }

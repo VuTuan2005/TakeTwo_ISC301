@@ -47,7 +47,14 @@ module.exports = ({ app, post, db, market, requireAuth, requireAdmin, config }) 
       db.prepare("UPDATE orders SET status = 'DELIVERING', shipped_at = ?, auto_confirm_deadline = ?, tracking_code = ?, shipping_cost_incurred = ?, updated_at = ? WHERE id = ?")
         .run(now, new Date(Date.now() + config.escrow_hours * 3600000).toISOString(), sh.tracking_code, sh.fee_payable, now, o.id);
     }
-    if (status === 'DELIVERED') db.prepare('UPDATE shipments SET delivered_at = ? WHERE id = ?').run(now, sh.id);
+    if (status === 'DELIVERING') {
+      db.prepare("UPDATE orders SET updated_at = ? WHERE id = ?").run(now, o.id);
+    }
+    if (status === 'DELIVERED') {
+      db.prepare('UPDATE shipments SET delivered_at = ? WHERE id = ?').run(now, sh.id);
+      const deadline = new Date(Date.now() + config.escrow_hours * 3600000).toISOString();
+      db.prepare("UPDATE orders SET auto_confirm_deadline = ?, updated_at = ? WHERE id = ?").run(deadline, now, o.id);
+    }
     db.prepare('UPDATE shipments SET status = ?, updated_at = ? WHERE id = ?').run(status, now, sh.id);
     audit(user.id, 'SHIPMENT_STATUS', 'SHIPMENT', sh.id, reason || `Chuyển sang ${status}`, { from: sh.status, to: status });
     return { success: true, message: 'Đã cập nhật vận chuyển mô phỏng.' };

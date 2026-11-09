@@ -39,7 +39,10 @@ function delivering(id) {
   if (order(id).delivery_type === 'CAMPUS_MEETUP') market.transition(user(2), id, 'ship');
   else {
     market.transition(user(2), id, 'ready_pickup', { pickup_address: 'Cổng trường' });
-    market.shipmentStatus(user(4), db.prepare('SELECT id FROM shipments WHERE order_id = ?').get(id).id, 'PICKED_UP');
+    const ship = db.prepare('SELECT id FROM shipments WHERE order_id = ?').get(id);
+    market.shipmentStatus(user(4), ship.id, 'PICKED_UP');
+    market.shipmentStatus(user(4), ship.id, 'DELIVERING');
+    market.shipmentStatus(user(4), ship.id, 'DELIVERED');
   }
 }
 
