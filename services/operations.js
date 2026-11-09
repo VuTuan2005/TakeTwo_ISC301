@@ -36,7 +36,7 @@ module.exports = ({ app, post, db, market, requireAuth, requireAdmin, config }) 
     const sh = db.prepare('SELECT * FROM shipments WHERE id = ?').get(id);
     if (!sh) fail(404, 'Không tìm thấy vận đơn.');
     const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(sh.order_id);
-    const allowed = { PENDING_PICKUP: ['PICKED_UP', 'CANCELLED'], PICKED_UP: ['DELIVERING'], DELIVERING: ['DELIVERED'] };
+    const allowed = { PENDING_PICKUP: ['PICKED_UP', 'CANCELLED'], PICKED_UP: ['DELIVERING', 'DELIVERED'], DELIVERING: ['DELIVERED'] };
     if (!allowed[sh.status]?.includes(status)) fail(409, 'Không được bỏ bước hoặc cập nhật lại vận chuyển đã kết thúc.');
     if (o.escrow_status !== 'HELD' || !['ACCEPTED', 'DELIVERING', 'DISPUTED'].includes(o.status)) fail(409, 'Đơn không còn cho phép thay đổi vận chuyển.');
     if (status === 'PICKED_UP' && (!o.pickup_address || o.status !== 'ACCEPTED')) fail(409, 'Cần seller chấp nhận và báo địa chỉ sẵn sàng lấy hàng.');

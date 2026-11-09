@@ -352,6 +352,16 @@ async function deleteProduct(productId) {
 
 // 1-Click Bump Product to Top 1
 async function quickBumpProduct(productId) {
+  if (!currentUser) {
+    showToast('Vui lòng đăng nhập để thực hiện.', 'info');
+    if (typeof openLoginModal === 'function') openLoginModal();
+    return;
+  }
+  const credits = (typeof currentWallet !== 'undefined' ? currentWallet?.boost_credits : currentUser?.wallet?.boost_credits) || 0;
+  const promptText = credits > 0
+    ? `Xác nhận dùng 1 lượt đẩy tin (bạn đang có ${credits} lượt) để đưa món đồ này lên vị trí ưu tiên hàng đầu trong 7 ngày?`
+    : `Bạn hiện có 0 lượt đẩy có sẵn. Hệ thống sẽ thanh toán 15.000 đ từ số dư ví khả dụng để đẩy tin trong 7 ngày. Bạn có muốn tiếp tục?`;
+  if (!confirm(promptText)) return;
   try {
     const res = await apiFetch(`/api/products/${productId}/bump`, {
       method: 'POST',
@@ -365,7 +375,7 @@ async function quickBumpProduct(productId) {
       showToast(data.error, 'error');
       return;
     }
-    showToast(data.message, 'success');
+    showToast(`🎉 Đã đẩy tin thành công! Món đồ đã được đưa lên vị trí ưu tiên trong 7 ngày.`, 'success');
     await loadMe();
     await loadProducts();
     if (workspaceRoute === 'store') await loadStore();

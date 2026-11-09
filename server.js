@@ -749,6 +749,8 @@ app.get('/api/orders', requireAuth, (req, res) => {
            s.name as seller_name, s.email as seller_email,
            (SELECT tracking_code FROM shipments sh WHERE sh.order_id = o.id) as courier_tracking_code,
            (SELECT status FROM shipments sh WHERE sh.order_id = o.id) as courier_status,
+           (SELECT picked_up_at FROM shipments sh WHERE sh.order_id = o.id) as courier_picked_up_at,
+           (SELECT delivered_at FROM shipments sh WHERE sh.order_id = o.id) as courier_delivered_at,
            (SELECT id FROM disputes d WHERE d.order_id = o.id) as dispute_id
     FROM orders o
     JOIN products p ON o.product_id = p.id

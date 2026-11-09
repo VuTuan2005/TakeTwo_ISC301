@@ -263,9 +263,9 @@
           </td>
           <td>
             ${sh.status === 'PENDING_PICKUP' && sh.order_status === 'ACCEPTED' && sh.pickup_address ? `<button class="btn btn-primary btn-sm" onclick="updateShipmentStatus(${sh.id}, 'PICKED_UP')">Đã lấy hàng</button>` : ''}
-            ${sh.status === 'PICKED_UP' ? `<button class="btn btn-primary btn-sm" onclick="updateShipmentStatus(${sh.id}, 'DELIVERING')">Đang giao</button>` : ''}
+            ${sh.status === 'PICKED_UP' ? `<button class="btn btn-outline btn-sm" onclick="updateShipmentStatus(${sh.id}, 'DELIVERING')">Đang giao</button> <button class="btn btn-primary btn-sm" onclick="updateShipmentStatus(${sh.id}, 'DELIVERED')">Đã giao thành công</button>` : ''}
             ${sh.status === 'DELIVERING' ? `<button class="btn btn-primary btn-sm" onclick="updateShipmentStatus(${sh.id}, 'DELIVERED')">Đã giao thành công</button>` : ''}
-            ${sh.status === 'DELIVERED' ? `<span style="color:var(--success-text); font-weight:600;">✓ Hoàn tất</span>` : ''}
+            ${sh.status === 'DELIVERED' ? `<span style="color:var(--success-text); font-weight:600;">✓ Đã giao thành công</span>` : ''}
           </td>
         </tr>
       `).join('');
