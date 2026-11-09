@@ -742,40 +742,11 @@ async function simulateTopupSuccess() {
 }
 
 function openWithdrawModal() {
-  openModal('modalWithdraw');
+  showToast('🔒 Ví TakeTwo là ví dịch vụ đóng. Không hỗ trợ rút tiền về ngân hàng.', 'info');
 }
 
 async function submitWithdraw() {
-  const amount = $val('withdrawAmount', '');
-  const bankName = $val('withdrawBankName', 'MBBank');
-  const bankAccount = $val('withdrawAccountNum', '');
-
-  if (!amount || !bankAccount) {
-    showToast('Vui lòng nhập đầy đủ số tiền và số tài khoản', 'error');
-    return;
-  }
-
-  try {
-    const res = await apiFetch('/api/wallet/withdraw', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ amount, bank_name: bankName, bank_account: bankAccount })
-    });
-    const data = await res.json();
-    if (data.error) {
-      showToast(data.error, 'error');
-      return;
-    }
-    closeModal('modalWithdraw');
-    showToast(data.message, 'success');
-    await loadMe();
-    await loadTransactionsTable();
-    await loadOverview();
-  } catch (err) {
-    showToast(err.message || 'Không thể xử lý thao tác. Vui lòng thử lại.', 'error');
-  }
+  showToast('🔒 Ví TakeTwo là ví dịch vụ đóng. Không hỗ trợ rút tiền về ngân hàng.', 'info');
 }
 
 // -------------------------------------------------------------

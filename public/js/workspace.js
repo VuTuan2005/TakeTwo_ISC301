@@ -20,7 +20,7 @@ const stateLabels = { AVAILABLE: 'Đang bán', RESERVED: 'Đang giữ chỗ', SO
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const E = escapeHTML;
 function imageURL(value) {
-  return /^(https?:\/\/|data:image\/(jpeg|png|webp);base64,)/i.test(String(value || '')) ? E(value) : 'data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22400%22%20height=%22300%22%3E%3Crect%20width=%22400%22%20height=%22300%22%20fill=%22%23eef1f4%22/%3E%3C/svg%3E';
+  return /^(https?:\/\/|\/api\/attachments\/|data:image\/(jpeg|png|webp);base64,)/i.test(String(value || '')) ? E(value) : 'data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%22400%22%20height=%22300%22%3E%3Crect%20width=%22400%22%20height=%22300%22%20fill=%22%23eef1f4%22/%3E%3C/svg%3E';
 }
 function stateTag(status) { return `<span class="state-tag state-${E(status)}">${E(stateLabels[status] || status)}</span>`; }
 function messageHTML(message, action) { return `<div class="empty-state"><p>${E(message)}</p>${action || ''}</div>`; }
@@ -175,7 +175,18 @@ async function onUserSwitch(id) {
 async function handleLogout() {
   pendingCheckout = null;
   clearAccountViews();
-  try { await apiFetch('/api/auth/logout', { method: 'POST' }); localStorage.removeItem('takeTwo_activeUserId'); switchNav('marketplace'); }
+  try {
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+    localStorage.removeItem('takeTwo_activeUserId');
+    currentUser = null;
+    currentWallet = { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
+    updateHeaderWalletDisplay();
+    updateRoleNavigation();
+    await loadUsers();
+    closeModal('modalLogin');
+    switchNav('marketplace');
+    showToast('Đã đăng xuất thành công.', 'info');
+  }
   catch (error) { showToast(error.message, 'error'); }
 }
 function renderDemoBanner(value) {
@@ -183,7 +194,7 @@ function renderDemoBanner(value) {
   $id('demoModeBanner').textContent = isDemoMode ? 'Chế độ mô phỏng · OTP, Google, số dư và thanh toán không phải giao dịch thật' : 'Demo đã tắt · Các dịch vụ thanh toán và OTP thật chưa được tích hợp';
   $id('sidebarUserSwitchRow').hidden = !isDemoMode;
   if ($id('btnTabDemo')) $id('btnTabDemo').style.display = isDemoMode ? '' : 'none';
-  const simulated = ['promptGoogleSSO()', 'openTopupModal()', 'openWithdrawModal()', 'simulateTopupSuccess()', 'submitWithdraw()'];
+  const simulated = ['promptGoogleSSO()', 'openTopupModal()', 'simulateTopupSuccess()'];
   document.querySelectorAll('button[onclick]').forEach(button => {
     if (simulated.includes(button.getAttribute('onclick'))) { button.disabled = !isDemoMode; button.title = isDemoMode ? '' : 'Dịch vụ thật chưa tích hợp.'; }
   });
@@ -195,7 +206,7 @@ function renderDemoBanner(value) {
   if ($id('loginPassword')) $id('loginPassword').placeholder = isDemoMode ? 'Mật khẩu (demo: 123456)' : 'Mật khẩu của bạn';
 }
 function updateHeaderWalletDisplay() {
-  for (const id of ['topbarWalletAvailable', 'kpiOverviewWalletAvail', 'stripAvailableBal', 'packagesWalletBal', 'withdrawAvailableDisplay']) $text(id, formatVND(currentWallet.available_balance));
+  for (const id of ['topbarWalletAvailable', 'kpiOverviewWalletAvail', 'stripAvailableBal', 'packagesWalletBal']) $text(id, formatVND(currentWallet.available_balance));
   for (const id of ['kpiOverviewEscrow', 'stripEscrowBal']) $text(id, formatVND(currentWallet.escrow_balance));
   for (const id of ['kpiOverviewBoostCredits', 'packagesCurrentCredits']) $text(id, `${currentWallet.boost_credits || 0} lượt`);
   $text('checkoutCurrentBalance', `Khả dụng: ${formatVND(currentWallet.available_balance)}`);

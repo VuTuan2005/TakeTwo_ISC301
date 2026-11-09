@@ -481,6 +481,7 @@ function createMarketplace(db) {
   function cash(user, body, withdraw = false) {
     if (user.role === 'ADMIN') fail(403, 'Quản trị viên không dùng ví cá nhân.');
     if (user.status === 'LOCKED') fail(403, 'Tài khoản đang bị khóa.');
+    if (withdraw) fail(400, 'Ví TakeTwo là ví dịch vụ đóng. Không hỗ trợ rút tiền về tài khoản ngân hàng hoặc quy đổi thành tiền mặt.');
 
     return atomic(() => {
       const amount = money(body.amount, withdraw ? 20000 : 10000);

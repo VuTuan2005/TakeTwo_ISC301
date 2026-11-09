@@ -134,6 +134,7 @@ function setSessionCookie(res, user) {
     { expiresIn: '7d' }
   );
   res.cookie('taketwo_token', token, {
+    path: '/',
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
@@ -232,7 +233,13 @@ post('/api/auth/send-otp', requireDemo, (req, res) => {
     return res.status(400).json({ error: 'Email sinh viên không hợp lệ!' });
   }
 
-  const domain = email.split('@')[1]?.toLowerCase();
+  const cleanEmail = email.toLowerCase().trim();
+  const existingUser = db.prepare('SELECT role FROM users WHERE LOWER(email) = ?').get(cleanEmail);
+  if (existingUser && existingUser.role === 'ADMIN') {
+    return res.status(403).json({ error: 'Tài khoản Quản trị viên (Admin) không thể nhận mã OTP. Vui lòng đăng nhập bằng mật khẩu.' });
+  }
+
+  const domain = cleanEmail.split('@')[1];
   if (!ALLOWED_CAMPUS_DOMAINS.includes(domain)) {
     return res.status(400).json({
       error: `Email không thuộc các trường đại học hỗ trợ (${ALLOWED_CAMPUS_DOMAINS.slice(0, 5).join(', ')}...)`
@@ -251,25 +258,28 @@ post('/api/auth/send-otp', requireDemo, (req, res) => {
       expires_at = excluded.expires_at,
       attempts = 0,
       created_at = datetime('now')
-  `).run(email.toLowerCase(), hashedOtp, expiresAt);
+  `).run(cleanEmail, hashedOtp, expiresAt);
 
   console.log(`[TakeTwo OTP] Generated a simulated verification code (expires in 5m).`);
 
   res.json({
     success: true,
     message: 'Mã xác thực OTP (mô phỏng) đã được tạo.',
-    simulated_otp: otp
+    simulated_otp: otp,
+    demo_otp: otp
   });
 });
 
 post('/api/auth/register', (req, res) => {
-  const { email, password, name, campus, student_code, otp } = req.body;
+  const { email, password, name, campus, student_code } = req.body;
+  const otp = req.body.otp || req.body.otp_code;
   const campusName = campus || 'Khu đô thị Hòa Lạc (ĐH FPT)';
   if (!email || !password || !name) {
     return res.status(400).json({ error: 'Vui lòng điền đầy đủ các trường bắt buộc!' });
   }
 
-  const domain = email.split('@')[1]?.toLowerCase();
+  const cleanEmail = String(email).trim().toLowerCase();
+  const domain = cleanEmail.split('@')[1];
   if (!ALLOWED_CAMPUS_DOMAINS.includes(domain)) {
     return res.status(400).json({ error: 'Chỉ chấp nhận email sinh viên thuộc các trường đại học Hà Nội được hỗ trợ!' });
   }
@@ -278,26 +288,31 @@ post('/api/auth/register', (req, res) => {
     return res.status(400).json({ error: 'Mật khẩu phải có tối thiểu 6 ký tự!' });
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase());
+  const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(cleanEmail);
   if (existing) {
     return res.status(409).json({ error: 'Email này đã được đăng ký trong hệ thống TakeTwo!' });
   }
 
-  if (otp) {
-    const record = db.prepare('SELECT * FROM otp_codes WHERE email = ?').get(email.toLowerCase());
+  if (!otp) {
+    return res.status(400).json({ error: 'Vui lòng nhập mã xác thực OTP gửi về email!' });
+  }
+
+  const isUniversalDemo = DEMO_MODE && String(otp).trim() === '123456';
+  if (!isUniversalDemo) {
+    const record = db.prepare('SELECT * FROM otp_codes WHERE email = ?').get(cleanEmail);
     if (!record || Date.now() > record.expires_at) {
       return res.status(400).json({ error: 'Mã OTP đã hết hạn hoặc không tồn tại. Vui lòng lấy mã mới!' });
     }
     if (record.attempts >= 5) {
       return res.status(429).json({ error: 'Đã nhập sai OTP quá 5 lần. Vui lòng yêu cầu mã mới!' });
     }
-    const match = bcrypt.compareSync(otp, record.code_hash);
+    const match = bcrypt.compareSync(String(otp).trim(), record.code_hash);
     if (!match) {
-      db.prepare('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = ?').run(email.toLowerCase());
+      db.prepare('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = ?').run(cleanEmail);
       return res.status(400).json({ error: 'Mã OTP không chính xác!' });
     }
-    db.prepare('DELETE FROM otp_codes WHERE email = ?').run(email.toLowerCase());
   }
+  db.prepare('DELETE FROM otp_codes WHERE email = ?').run(cleanEmail);
 
   const hashedPassword = bcrypt.hashSync(password, 10);
   const avatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
@@ -336,7 +351,8 @@ post('/api/auth/register', (req, res) => {
 });
 
 post('/api/auth/login', (req, res) => {
-  const { email, password, otp_code, login_type } = req.body;
+  const { email, password, login_type } = req.body;
+  const otp_code = req.body.otp_code || req.body.otp;
   if (!email) {
     return res.status(400).json({ error: 'Vui lòng nhập địa chỉ email!' });
   }
@@ -344,6 +360,10 @@ post('/api/auth/login', (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(cleanEmail);
 
   if (login_type === 'otp') {
+    if (user && user.role === 'ADMIN') {
+      return res.status(403).json({ error: 'Tài khoản Quản trị viên (Admin) bắt buộc phải đăng nhập bằng mật khẩu để bảo mật.' });
+    }
+    if (!otp_code) return res.status(400).json({ error: 'Vui lòng nhập mã OTP!' });
     const otpRow = db.prepare('SELECT * FROM otp_codes WHERE email = ?').get(cleanEmail);
     const isUniversalDemo = DEMO_MODE && String(otp_code).trim() === '123456';
 
@@ -392,6 +412,7 @@ post('/api/auth/login', (req, res) => {
 
 post('/api/auth/logout', (req, res) => {
   res.clearCookie('taketwo_token', {
+    path: '/',
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production'
@@ -694,7 +715,7 @@ app.get('/api/transactions', requireAuth, handleTransactionsLedger);
 app.get('/api/ledger', requireAuth, handleTransactionsLedger);
 
 post('/api/wallet/topup', requireAuth, requireDemo, (req, res) => res.json(marketplace.cash(req.currentUser, req.body)));
-post('/api/wallet/withdraw', requireAuth, requireDemo, (req, res) => res.json(marketplace.cash(req.currentUser, req.body, true)));
+post('/api/wallet/withdraw', requireAuth, requireDemo, (req, res) => res.status(400).json({ error: 'Ví TakeTwo là ví dịch vụ đóng (Closed-loop Wallet). Hệ thống không hỗ trợ rút tiền về tài khoản ngân hàng hoặc quy đổi thành tiền mặt.' }));
 
 // -------------------------------------------------------------
 // CHECKOUT, QUOTE & VOUCHERS

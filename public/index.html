@@ -95,7 +95,8 @@
         </section>
         <section id="view-orders" hidden><div class="page-heading"><div><h1>Đơn hàng</h1><p>Chọn một đơn để xem giao nhận, thời hạn và thao tác tiếp theo.</p></div><button class="btn-fintab btn-fintab-outline" onclick="loadOrders()">Làm mới</button></div><div class="order-tabs"><button data-order-tab="all" onclick="setOrderTab('all')">Tất cả</button><button data-order-tab="buyer" onclick="setOrderTab('buyer')">Đang mua</button><button data-order-tab="seller" onclick="setOrderTab('seller')">Đang bán</button></div><div id="ordersList" class="workspace-panel"></div></section>
         <section id="view-order" hidden><div id="orderDetail"></div></section>
-        <section id="view-transactions" hidden><div class="page-heading"><div><h1>Ví & Sổ giao dịch</h1><p>Tiền khả dụng, tiền tạm giữ và lịch sử biến động mô phỏng.</p></div><div class="page-actions-group"><button class="btn-fintab btn-fintab-primary" onclick="openTopupModal()">Nạp mô phỏng</button><button class="btn-fintab btn-fintab-outline" onclick="openWithdrawModal()">Rút mô phỏng</button></div></div>
+        <section id="view-transactions" hidden><div class="page-heading"><div><h1>Ví & Sổ giao dịch</h1><p>Tiền khả dụng, tiền tạm giữ và lịch sử biến động mô phỏng.</p></div><div class="page-actions-group"><button class="btn-fintab btn-fintab-primary" onclick="openTopupModal()">Nạp mô phỏng</button></div></div>
+          <div style="background: #e6f4ff; border: 1px solid #91caff; border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; color: #0050b3; display: flex; align-items: center; gap: 8px;"><span>🔒</span><span><strong>Giới hạn sử dụng Ví TakeTwo:</strong> Số dư chỉ dùng để mua dịch vụ quảng bá/đẩy tin trên TakeTwo. Không hỗ trợ chuyển số dư cho người khác hoặc rút thành tiền mặt/về ngân hàng.</span></div>
           <div class="balance-strip"><div><span>Ví khả dụng</span><strong id="stripAvailableBal">0 đ</strong></div><div><span>Tạm giữ Escrow</span><strong id="stripEscrowBal">0 đ</strong></div><div><span>Thu trong phạm vi lọc</span><strong id="stripTotalIncome">0 đ</strong></div><div><span>Chi trong phạm vi lọc</span><strong id="stripTotalExpense">0 đ</strong></div></div>
           <div class="filter-toolbar"><div class="btn-pill-group"><button class="btn-pill-item active" onclick="setTransactionTab('all',this)">Tất cả</button><button class="btn-pill-item" onclick="setTransactionTab('deposit',this)">Phiếu thu</button><button class="btn-pill-item" onclick="setTransactionTab('payment',this)">Phiếu chi</button><button class="btn-pill-item" onclick="setTransactionTab('escrow',this)">Tạm giữ</button></div><label class="sr-only" for="transactionSearchInput">Tìm chứng từ</label><input type="search" id="transactionSearchInput" placeholder="Mã chứng từ, nội dung…" oninput="debounceLedger()"><label class="global-ledger"><input type="checkbox" id="chkViewAllLedger" onchange="loadTransactionsTable()">Toàn sàn (admin)</label></div>
           <div class="workspace-panel table-responsive"><table class="fintab-table ledger-table"><thead><tr><th>Chứng từ / Thời gian</th><th>Nội dung / Tài khoản</th><th>Loại</th><th class="numeric">Số tiền</th><th></th></tr></thead><tbody id="transactionsTableBody"></tbody></table></div>
@@ -252,44 +253,6 @@
         <button class="btn-fintab btn-fintab-primary" style="width: 100%; padding: 10px; font-size: 13.5px;" onclick="simulateTopupSuccess()">
            [Mô Phỏng] Quét Mã Chuyển Khoản Thành Công
         </button>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- 3. WITHDRAW MODAL -->
-  <div id="modalWithdraw" class="fintab-modal-overlay">
-    <div class="fintab-modal-dialog" style="max-width: 440px;">
-      <div class="modal-header-bar">
-        <h3>Rút tiền mô phỏng</h3>
-        <button class="btn-close-modal" onclick="closeModal('modalWithdraw')">&times;</button>
-      </div>
-      <div class="modal-content-body">
-        <div style="margin-bottom: 14px;">
-          <span style="font-size: 12px; color: var(--text-muted);">Số dư khả dụng có thể rút:</span>
-          <div id="withdrawAvailableDisplay" style="font-size: 18px; font-weight: 800; color: var(--primary);">250.000 đ</div>
-        </div>
-        <div style="margin-bottom: 12px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Số tiền muốn rút (tối thiểu 20.000đ):</label>
-          <input type="number" id="withdrawAmount" class="filter-select" style="width: 100%; padding: 8px;" placeholder="Ví dụ: 100000">
-        </div>
-        <div style="margin-bottom: 12px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Ngân hàng thụ hưởng:</label>
-          <select id="withdrawBankName" class="filter-select" style="width: 100%; padding: 8px;">
-            <option value="MBBank">MBBank (Ngân hàng Quân Đội)</option>
-            <option value="Vietcombank">Vietcombank</option>
-            <option value="Techcombank">Techcombank</option>
-            <option value="TPBank">TPBank</option>
-          </select>
-        </div>
-        <div style="margin-bottom: 12px;">
-          <label style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px;">Số tài khoản chính chủ:</label>
-          <input type="text" id="withdrawAccountNum" class="filter-select" style="width: 100%; padding: 8px;" placeholder="Nhập số tài khoản thẻ sinh viên...">
-        </div>
-      </div>
-      <div class="modal-footer-bar">
-        <button class="btn-fintab btn-fintab-outline" onclick="closeModal('modalWithdraw')">Hủy</button>
-        <button class="btn-fintab btn-fintab-primary" onclick="submitWithdraw()">Xác nhận rút mô phỏng</button>
       </div>
     </div>
   </div>
