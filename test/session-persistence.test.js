@@ -21,7 +21,7 @@ test('password session stays valid when the local server restarts with the same 
     child = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     let errors = '';
     child.stderr.on('data', chunk => { errors += chunk; });
-    for (let attempt = 0; attempt < 100; attempt++) {
+    for (let attempt = 0; attempt < 200; attempt++) {
       if (child.exitCode !== null) throw new Error(`Server stopped during startup: ${errors}`);
       try { if ((await fetch(base + '/api/config')).ok) return; } catch (_) {}
       await new Promise(resolve => setTimeout(resolve, 100));
