@@ -116,7 +116,7 @@ function clearAccountViews(preserveModal = false) {
   if ($id('imagePreviewWrapper')) $id('imagePreviewWrapper').style.display = 'none';
   if ($id('uploadPrompt')) $id('uploadPrompt').style.display = 'block';
   currentUser = null; currentWallet = { available_balance: 0, escrow_balance: 0, boost_credits: 0 };
-  for (const id of ['overviewTasks', 'productGrid', 'storeGrid', 'favoritesGrid', 'productDetail', 'ordersList', 'orderDetail', 'metricsContent', 'disputesList', 'caseContent']) {
+  for (const id of ['overviewTasks', 'productGrid', 'storeGrid', 'favoritesGrid', 'productDetail', 'ordersList', 'orderDetail', 'metricsContent', 'disputesList', 'caseContent', 'storeStatsBanner']) {
     if ($id(id)) $id(id).innerHTML = '';
   }
   if ($id('transactionsTableBody')) $id('transactionsTableBody').replaceChildren();
@@ -397,17 +397,30 @@ async function loadStore() {
   try {
     const products = await readView('store', `/api/products?seller_id=${currentUser.id}`);
     const promotedCount = products.filter(p => p.is_promoted).length;
-    const banner = `
-      <div class="store-credits-banner">
-        <div class="store-credits-info">
-          <span>Lượt đẩy tin trong ví: <strong style="color:#EA580C; font-weight:700;">${currentWallet.boost_credits || 0} lượt</strong></span>
-          <span style="color:#CBD5E1;">•</span>
-          <span>Tin đang đẩy Top: <strong style="color:#16A34A; font-weight:700;">${promotedCount} món</strong></span>
+    const bannerEl = $id('storeStatsBanner');
+    if (bannerEl) {
+      bannerEl.innerHTML = `
+        <div class="store-stats-bar">
+          <div class="store-stats-group">
+            <div class="store-stat-item">
+              <span class="store-stat-icon">🚀</span>
+              <span class="store-stat-text">Lượt đẩy tin trong ví:</span>
+              <strong class="store-stat-highlight">${currentWallet.boost_credits || 0} lượt</strong>
+            </div>
+            <span class="store-stat-sep">/</span>
+            <div class="store-stat-item">
+              <span class="store-stat-icon">🔥</span>
+              <span class="store-stat-text">Tin đang đẩy Top:</span>
+              <strong>${promotedCount} món</strong>
+            </div>
+          </div>
+          <a href="#packages" class="store-stat-link">
+            Mua thêm gói đẩy tin →
+          </a>
         </div>
-        <a href="#packages" class="btn-fintab btn-fintab-outline" style="padding:6px 14px; font-size:12.5px;">Mua thêm gói đẩy tin →</a>
-      </div>
-    `;
-    $id('storeGrid').innerHTML = banner + productCards(products);
+      `;
+    }
+    $id('storeGrid').innerHTML = productCards(products);
   }
   catch (error) { blockError('storeGrid', error, 'loadStore()'); }
 }

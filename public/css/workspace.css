@@ -277,8 +277,62 @@ select, input[type="search"] { border: 1px solid #cad2dd; border-radius: 6px; ba
 .bump-status-box.is-promoted .bump-status-header p { color: #C2410C; }
 .bump-status-action { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #E2E8F0; padding-top: 10px; font-size: 13px; }
 .bump-status-box.is-promoted .bump-status-action { border-top-color: #FED7AA; }
-.store-credits-banner { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; background: #FFF7ED; border: 1px solid #FDBA74; border-radius: 8px; margin-bottom: 20px; font-size: 13.5px; }
-.store-credits-info { display: flex; align-items: center; gap: 10px; }
+.store-stats-bar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background: #FFFDF9 !important;
+  border: 1px solid #FED7AA !important;
+  border-radius: 8px !important;
+  padding: 11px 18px !important;
+  margin-bottom: 22px !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+}
+.store-stats-group {
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+  flex-wrap: wrap !important;
+}
+.store-stat-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  font-size: 13px !important;
+  color: #475569 !important;
+}
+.store-stat-icon {
+  font-size: 15px !important;
+  line-height: 1 !important;
+}
+.store-stat-text {
+  font-size: 13px !important;
+}
+.store-stat-highlight {
+  color: #EA580C !important;
+  font-weight: 700 !important;
+}
+.store-stat-sep {
+  color: #CBD5E1 !important;
+  font-size: 13px !important;
+}
+.store-stat-link {
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  color: #C2410C !important;
+  text-decoration: none !important;
+  padding: 5px 12px !important;
+  border: 1px solid #FDBA74 !important;
+  border-radius: 6px !important;
+  background: #FFFFFF !important;
+  transition: all 0.15s ease !important;
+  white-space: nowrap !important;
+}
+.store-stat-link:hover {
+  background: #FFF7ED !important;
+  border-color: #EA580C !important;
+}
 
 /* Stepper Progress Bar & Callouts */
 .order-stepper { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; padding: 14px 16px; background: #F8FAFC; border-radius: 8px; border: 1px solid #E2E8F0; position: relative; overflow-x: auto; gap: 4px; }
