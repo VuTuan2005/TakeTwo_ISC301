@@ -47,6 +47,9 @@ function orderDetailedStatusTag(o) {
   }
   return stateTag(o.status);
 }
+function stepDot(num, state) {
+  return `<div class="order-step-dot">${state === 'completed' ? '✓' : num}</div>`;
+}
 function renderOrderTimeline(o) {
   if (o.status === 'CANCELLED' || o.status === 'DISPUTED') return '';
   const isMeetup = o.delivery_type === 'CAMPUS_MEETUP';
@@ -57,13 +60,13 @@ function renderOrderTimeline(o) {
     const s4 = ['COMPLETED', 'COMPLETED_AUTO'].includes(o.status) ? 'completed' : (o.status === 'DELIVERING' ? 'active' : '');
     return `
       <div class="order-stepper">
-        <div class="order-step ${s1}"><div class="order-step-dot">1</div><span class="order-step-title">Đặt mua</span></div>
+        <div class="order-step ${s1}">${stepDot(1, s1)}<span class="order-step-title">Đặt mua</span></div>
         <div class="order-step-line ${s2 === 'completed' ? 'completed' : ''}"></div>
-        <div class="order-step ${s2}"><div class="order-step-dot">2</div><span class="order-step-title">Người bán duyệt</span></div>
+        <div class="order-step ${s2}">${stepDot(2, s2)}<span class="order-step-title">Người bán duyệt</span></div>
         <div class="order-step-line ${s3 === 'completed' ? 'completed' : ''}"></div>
-        <div class="order-step ${s3}"><div class="order-step-dot">3</div><span class="order-step-title">Bàn giao</span></div>
+        <div class="order-step ${s3}">${stepDot(3, s3)}<span class="order-step-title">Bàn giao</span></div>
         <div class="order-step-line ${s4 === 'completed' ? 'completed' : ''}"></div>
-        <div class="order-step ${s4}"><div class="order-step-dot">4</div><span class="order-step-title">Hoàn tất</span></div>
+        <div class="order-step ${s4}">${stepDot(4, s4)}<span class="order-step-title">Hoàn tất</span></div>
       </div>
     `;
   }
@@ -76,17 +79,17 @@ function renderOrderTimeline(o) {
   const s6 = isDone ? 'completed' : '';
   return `
     <div class="order-stepper">
-      <div class="order-step ${s1}"><div class="order-step-dot">1</div><span class="order-step-title">Đặt hàng</span></div>
+      <div class="order-step ${s1}">${stepDot(1, s1)}<span class="order-step-title">Đặt hàng</span></div>
       <div class="order-step-line ${s2 === 'completed' ? 'completed' : ''}"></div>
-      <div class="order-step ${s2}"><div class="order-step-dot">2</div><span class="order-step-title">Chuẩn bị hàng</span></div>
+      <div class="order-step ${s2}">${stepDot(2, s2)}<span class="order-step-title">Chuẩn bị hàng</span></div>
       <div class="order-step-line ${s3 === 'completed' ? 'completed' : ''}"></div>
-      <div class="order-step ${s3}"><div class="order-step-dot">3</div><span class="order-step-title">ĐVVC đã lấy</span></div>
+      <div class="order-step ${s3}">${stepDot(3, s3)}<span class="order-step-title">ĐVVC đã lấy</span></div>
       <div class="order-step-line ${s4 === 'completed' ? 'completed' : ''}"></div>
-      <div class="order-step ${s4}"><div class="order-step-dot">4</div><span class="order-step-title">Đang giao</span></div>
+      <div class="order-step ${s4}">${stepDot(4, s4)}<span class="order-step-title">Đang giao</span></div>
       <div class="order-step-line ${s5 === 'completed' ? 'completed' : ''}"></div>
-      <div class="order-step ${s5}"><div class="order-step-dot">5</div><span class="order-step-title">Đã giao</span></div>
+      <div class="order-step ${s5}">${stepDot(5, s5)}<span class="order-step-title">Đã giao</span></div>
       <div class="order-step-line ${s6 === 'completed' ? 'completed' : ''}"></div>
-      <div class="order-step ${s6}"><div class="order-step-dot">6</div><span class="order-step-title">Hoàn tất</span></div>
+      <div class="order-step ${s6}">${stepDot(6, s6)}<span class="order-step-title">Hoàn tất</span></div>
     </div>
   `;
 }

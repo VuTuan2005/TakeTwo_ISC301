@@ -2013,3 +2013,150 @@ button:disabled { opacity:.6; cursor:not-allowed; }
   .modal-footer-bar { flex-wrap:wrap; }
   .form-page .modal-content-body div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns:1fr !important; }
 }
+
+/* ========================================================
+   ORDER STEPPER PROGRESS TIMELINE & PROMOTION STYLES
+   ======================================================== */
+.order-stepper {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background: #ffffff !important;
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 12px !important;
+  padding: 18px 24px !important;
+  margin: 16px 0 24px 0 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03) !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  overflow-x: auto !important;
+}
+
+.order-step {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+  gap: 8px !important;
+  position: relative !important;
+  z-index: 2 !important;
+  flex: 1 !important;
+  min-width: 75px !important;
+}
+
+.order-step-dot {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 50% !important;
+  background: #F1F5F9 !important;
+  color: #94A3B8 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  border: 2px solid #CBD5E1 !important;
+  box-sizing: border-box !important;
+  transition: all 0.25s ease !important;
+}
+
+.order-step.completed .order-step-dot {
+  background: #10B981 !important;
+  color: #ffffff !important;
+  border-color: #10B981 !important;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35) !important;
+}
+
+.order-step.active .order-step-dot {
+  background: #2563EB !important;
+  color: #ffffff !important;
+  border-color: #93C5FD !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2) !important;
+  transform: scale(1.1) !important;
+}
+
+.order-step-title {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: #64748B !important;
+  line-height: 1.3 !important;
+  white-space: nowrap !important;
+  text-align: center !important;
+}
+
+.order-step.completed .order-step-title {
+  color: #047857 !important;
+  font-weight: 600 !important;
+}
+
+.order-step.active .order-step-title {
+  color: #1D4ED8 !important;
+  font-weight: 700 !important;
+}
+
+.order-step-line {
+  flex: 1 !important;
+  height: 3px !important;
+  background: #E2E8F0 !important;
+  margin: 0 -4px 26px !important;
+  z-index: 1 !important;
+  border-radius: 2px !important;
+  min-width: 12px !important;
+}
+
+.order-step-line.completed {
+  background: #10B981 !important;
+}
+
+/* Callouts & Banners */
+.order-status-callout {
+  padding: 12px 16px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  margin-bottom: 12px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+.order-status-callout.info { background: #EFF6FF !important; border: 1px solid #BFDBFE !important; color: #1E40AF !important; }
+.order-status-callout.success { background: #F0FDF4 !important; border: 1px solid #BBF7D0 !important; color: #166534 !important; }
+.order-status-callout.warning { background: #FFFBEB !important; border: 1px solid #FDE68A !important; color: #B45309 !important; }
+
+/* Promoted Card & Badges */
+.promoted-card { border: 1.5px solid #FDBA74 !important; box-shadow: 0 4px 14px rgba(249, 115, 22, 0.09) !important; position: relative !important; }
+.image-badge-promoted { position: absolute !important; top: 10px !important; left: 10px !important; background: linear-gradient(135deg, #FF6B00, #EA580C) !important; color: white !important; border-radius: 4px !important; padding: 3px 8px !important; font-size: 11px !important; font-weight: 700 !important; letter-spacing: 0.3px !important; box-shadow: 0 2px 6px rgba(234, 88, 12, 0.35) !important; z-index: 2 !important; }
+.promoted-badge-pill { display: inline-flex !important; align-items: center !important; gap: 3px !important; font-size: 11px !important; font-weight: 600 !important; color: #EA580C !important; background: #FFF7ED !important; padding: 2px 8px !important; border-radius: 999px !important; border: 1px solid #FFEDD5 !important; }
+.state-tag.state-PROMOTED { background: #FFF7ED !important; color: #C2410C !important; border: 1px solid #FFEDD5 !important; font-weight: 700 !important; }
+.bump-status-box { margin: 18px 0 !important; padding: 14px 18px !important; border-radius: 8px !important; background: #F8FAFC !important; border: 1px solid #E2E8F0 !important; display: flex !important; flex-direction: column !important; gap: 12px !important; }
+.bump-status-box.is-promoted { background: #FFF7ED !important; border-color: #FDBA74 !important; }
+.bump-status-header { display: flex !important; align-items: flex-start !important; gap: 12px !important; }
+.bump-fire-icon { font-size: 24px !important; line-height: 1 !important; flex-shrink: 0 !important; margin-top: 2px !important; }
+.bump-status-header strong { font-size: 14.5px !important; color: #1E293B !important; display: block !important; }
+.bump-status-box.is-promoted .bump-status-header strong { color: #9A3412 !important; }
+.bump-status-header p { margin: 4px 0 0 !important; font-size: 13px !important; color: #64748B !important; }
+.bump-status-box.is-promoted .bump-status-header p { color: #C2410C !important; }
+.bump-status-action { display: flex !important; justify-content: space-between !important; align-items: center !important; border-top: 1px solid #E2E8F0 !important; padding-top: 10px !important; font-size: 13px !important; }
+.bump-status-box.is-promoted .bump-status-action { border-top-color: #FED7AA !important; }
+.store-credits-banner { display: flex !important; justify-content: space-between !important; align-items: center !important; padding: 12px 18px !important; background: #FFF7ED !important; border: 1px solid #FDBA74 !important; border-radius: 8px !important; margin-bottom: 20px !important; font-size: 13.5px !important; }
+.store-credits-info { display: flex !important; align-items: center !important; gap: 10px !important; }
+
+@media (max-width: 640px) {
+  .order-stepper {
+    overflow-x: auto !important;
+    justify-content: flex-start !important;
+    gap: 12px !important;
+    padding: 14px 16px !important;
+  }
+  .order-step {
+    min-width: 70px !important;
+    flex: none !important;
+  }
+  .order-step-line {
+    min-width: 20px !important;
+    margin: 0 -6px 24px !important;
+  }
+  .order-step-title {
+    font-size: 11px !important;
+  }
+}
